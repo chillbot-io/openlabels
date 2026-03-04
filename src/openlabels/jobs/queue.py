@@ -176,8 +176,14 @@ class JobQueue:
             job_id: Job ID to complete
             result: Optional result data
         """
-        # Get job to record task_type for metrics
-        job = await self.session.get(JobQueueModel, job_id)
+        # Get job to record task_type for metrics (scoped to tenant)
+        result_obj = await self.session.execute(
+            select(JobQueueModel).where(
+                JobQueueModel.id == job_id,
+                JobQueueModel.tenant_id == self.tenant_id,
+            )
+        )
+        job = result_obj.scalar_one_or_none()
         task_type = job.task_type if job else "unknown"
 
         await self.session.execute(
@@ -261,8 +267,14 @@ class JobQueue:
                 logger.error("on_failed callback failed for job %s: %s", job_id, exc)
 
     async def get_job(self, job_id: UUID) -> JobQueueModel | None:
-        """Get a job by ID."""
-        return await self.session.get(JobQueueModel, job_id)
+        """Get a job by ID, scoped to the current tenant."""
+        result = await self.session.execute(
+            select(JobQueueModel).where(
+                JobQueueModel.id == job_id,
+                JobQueueModel.tenant_id == self.tenant_id,
+            )
+        )
+        return result.scalar_one_or_none()
 
     async def cancel(self, job_id: UUID) -> bool:
         """

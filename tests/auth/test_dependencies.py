@@ -19,6 +19,7 @@ from fastapi import HTTPException
 from openlabels.auth.oauth import TokenClaims
 from openlabels.auth.dependencies import (
     CurrentUser,
+    _is_admin_allowed,
     get_or_create_user,
     get_current_user,
     require_admin,

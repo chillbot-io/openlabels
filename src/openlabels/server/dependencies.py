@@ -39,7 +39,7 @@ from openlabels.server.cache import get_cache_manager as _get_cache_manager
 from openlabels.server.config import Settings, load_yaml_config
 from openlabels.server.config import get_settings as _get_settings
 from openlabels.server.db import get_session as _get_session
-from openlabels.server.db import set_rls_tenant_id
+from openlabels.server.db import set_rls_context
 from openlabels.server.middleware.rate_limit import get_tenant_rate_limiter
 from openlabels.server.services.base import TenantContext as ServiceTenantContext
 from openlabels.server.services.job_service import JobService
@@ -161,7 +161,7 @@ async def get_tenant_db_session(
             return result.scalars().all()
     """
     async for session in _get_session():
-        await set_rls_tenant_id(session, user.tenant_id)
+        await set_rls_context(session, user.tenant_id, user.id)
         yield session
 
 

@@ -432,6 +432,7 @@ async def m365_consent_callback(
     error: str | None = None,
     error_description: str | None = None,
     db: AsyncSession = Depends(get_session),
+    _user: CurrentUser = Depends(require_admin),
 ) -> HTMLResponse:
     """Handle the redirect from Microsoft's admin consent endpoint.
 

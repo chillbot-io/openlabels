@@ -51,11 +51,23 @@ WS_PUBSUB_CHANNEL = "openlabels:ws:events"
 
 
 def _get_pubsub_hmac_key() -> bytes:
-    """Return the HMAC key for signing Redis pub/sub messages."""
+    """Return the HMAC key for signing Redis pub/sub messages.
+
+    Raises ``RuntimeError`` in production/staging if no secret key is
+    configured, instead of falling back to a hardcoded default.
+    """
     settings = get_settings()
     key = settings.server.secret_key.get_secret_value()
     if not key:
-        key = "openlabels-dev-pubsub-key"
+        if settings.server.environment in ("production", "staging"):
+            raise RuntimeError(
+                "server.secret_key must be configured in production/staging. "
+                "Set OPENLABELS_SERVER__SECRET_KEY."
+            )
+        # Only allow an auto-generated fallback in development
+        logger.warning("No secret_key configured — using ephemeral dev-only HMAC key")
+        import secrets as _secrets
+        key = _secrets.token_hex(32)
     return key.encode("utf-8")
 
 
@@ -409,7 +421,9 @@ async def authenticate_websocket(
     # that was created by the auth bootstrapper at startup — do NOT
     # auto-create users or bypass authentication entirely.
     # SECURITY: Only allow auth bypass in development environment
-    if settings.auth.provider == "none" and settings.server.environment == "development":
+    if (settings.auth.provider == "none"
+            and settings.server.debug
+            and settings.server.host in ("127.0.0.1", "localhost", "::1")):
         async with get_session_factory()() as session:
             tenant_query = select(Tenant).where(
                 (Tenant.idp_tenant_id == "dev-tenant") | (Tenant.azure_tenant_id == "dev-tenant")

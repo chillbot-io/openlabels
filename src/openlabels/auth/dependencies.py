@@ -76,6 +76,31 @@ class CurrentUser(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+def _is_admin_allowed(email: str, has_idp_admin: bool) -> bool:
+    """Check whether a user should receive the admin role.
+
+    Requires BOTH the IdP claim AND presence on the server-side allowlist.
+    If the allowlist is empty, falls back to IdP-only behaviour with a warning.
+    """
+    if not has_idp_admin:
+        return False
+
+    settings = get_settings()
+    admin_emails = settings.auth.admin_emails
+
+    if not admin_emails:
+        logger.warning(
+            "SECURITY: admin_emails allowlist is empty; falling back to "
+            "IdP-only admin promotion for %s. Configure "
+            "OPENLABELS_AUTH__ADMIN_EMAILS to restrict admin access.",
+            email,
+        )
+        return True
+
+    # Email addresses are case-insensitive per RFC 5321
+    return email.lower() in (e.lower() for e in admin_emails)
+
+
 async def get_or_create_user(
     session: AsyncSession,
     claims: TokenClaims,
@@ -176,7 +201,7 @@ async def _find_or_create_user(
             azure_oid=claims.oid if provider == "azure_ad" else None,
             external_id=claims.oid,
             auth_provider=provider,
-            role="admin" if is_first_user or "admin" in claims.roles else "viewer",
+            role="admin" if is_first_user or _is_admin_allowed(claims.preferred_username, "admin" in claims.roles) else "viewer",
         )
         session.add(user)
         await session.flush()
@@ -184,15 +209,17 @@ async def _find_or_create_user(
         # Update name if changed
         if claims.name and user.name != claims.name:
             user.name = claims.name
-        # Sync role from Azure AD claims (both promote and demote)
-        if "admin" in claims.roles and user.role != "admin":
-            logger.info("Promoting user %s to admin (Azure AD role grant)", user.email)
+        # Sync role from IdP claims + admin allowlist (promote and demote)
+        should_be_admin = _is_admin_allowed(user.email, "admin" in claims.roles)
+        if should_be_admin and user.role != "admin":
+            logger.info("Promoting user %s to admin (IdP role + allowlist)", user.email)
             user.role = "admin"
-        elif "admin" not in claims.roles and user.role == "admin":
+        elif not should_be_admin and user.role == "admin":
             logger.warning(
                 "Demoting user %s from admin to viewer because IdP claims "
-                "no longer include 'admin' role. If this is unexpected, "
-                "check the IdP role assignments.",
+                "and/or admin allowlist no longer grant admin. "
+                "If this is unexpected, check IdP role assignments and "
+                "OPENLABELS_AUTH__ADMIN_EMAILS.",
                 user.email,
             )
             user.role = "viewer"

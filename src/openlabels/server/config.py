@@ -172,6 +172,12 @@ class AuthSettings(BaseSettings):
     # Multi-provider OIDC: keyed by slug ("google", "microsoft", "github", etc.)
     oidc_providers: dict[str, OIDCProviderSettings] = Field(default_factory=dict)
 
+    # Server-side admin allowlist.  Only users whose email appears in this
+    # list AND whose IdP token includes the "admin" role will be promoted.
+    # If empty, falls back to IdP-only behaviour (a warning is logged).
+    # Env: OPENLABELS_AUTH__ADMIN_EMAILS='["alice@co.com","bob@co.com"]'
+    admin_emails: list[str] = Field(default_factory=list)
+
     # Fernet key for encrypting tokens at rest in the session table.
     # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     # If not set, tokens are stored in plaintext (a warning is logged on startup).
@@ -894,6 +900,39 @@ class Settings(BaseSettings):
         ):
             raise ValueError(
                 "DATABASE_REQUIRE_SSL cannot be False in production/staging environments"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_production_cors_origins(self) -> Settings:
+        """Reject localhost-only CORS origins in production/staging with credentials."""
+        if self.server.environment not in ("production", "staging"):
+            return self
+        if not self.cors.allow_credentials:
+            return self
+        non_local = [
+            o for o in self.cors.allowed_origins
+            if "localhost" not in o and "127.0.0.1" not in o
+        ]
+        if not non_local and self.cors.allowed_origins:
+            raise ValueError(
+                "CORS allowed_origins contains only localhost origins in "
+                f"{self.server.environment} with allow_credentials=True. "
+                "Configure real origin URLs or set allow_credentials=False."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_production_admin_emails(self) -> Settings:
+        """Require a non-empty admin_emails allowlist in production/staging."""
+        if self.server.environment not in ("production", "staging"):
+            return self
+        if self.auth.provider == "none":
+            return self
+        if not self.auth.admin_emails:
+            raise ValueError(
+                "OPENLABELS_AUTH__ADMIN_EMAILS must be set in production/staging. "
+                "An empty allowlist allows any IdP admin-role user to become admin."
             )
         return self
 

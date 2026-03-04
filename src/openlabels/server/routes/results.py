@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from typing import Literal
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -33,6 +35,19 @@ from openlabels.server.schemas.pagination import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_content_disposition(filename: str) -> str:
+    """Build a Content-Disposition header safe from CRLF injection.
+
+    Strips control characters and uses RFC 5987 encoding for the filename.
+    """
+    # Remove any control characters (including CR, LF) and path separators
+    sanitized = re.sub(r'[\x00-\x1f\x7f/\\"]', '_', filename)
+    # RFC 5987 encoded filename for broad browser support
+    encoded = quote(sanitized, safe='')
+    return f"attachment; filename=\"{sanitized}\"; filename*=UTF-8''{encoded}"
+
 
 router = APIRouter()
 _limiter = Limiter(key_func=get_client_ip)
@@ -183,6 +198,7 @@ async def get_result_stats(
 
 
 @router.get("/export")
+@_limiter.limit("5/minute")
 async def export_results(
     request: Request,
     result_service: ResultServiceDep,
@@ -286,7 +302,7 @@ async def export_results(
         return StreamingResponse(
             _csv_generator(),
             media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename={filename}.csv"},
+            headers={"Content-Disposition": _safe_content_disposition(f"{filename}.csv")},
         )
     else:
         async def _json_generator():
@@ -306,7 +322,7 @@ async def export_results(
         return StreamingResponse(
             _json_generator(),
             media_type="application/json",
-            headers={"Content-Disposition": f"attachment; filename={filename}.json"},
+            headers={"Content-Disposition": _safe_content_disposition(f"{filename}.json")},
         )
 
 
@@ -332,7 +348,7 @@ def _build_export_response(
         return StreamingResponse(
             _csv_gen(),
             media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename={filename}.csv"},
+            headers={"Content-Disposition": _safe_content_disposition(f"{filename}.csv")},
         )
     else:
         def _json_gen():
@@ -346,7 +362,7 @@ def _build_export_response(
         return StreamingResponse(
             _json_gen(),
             media_type="application/json",
-            headers={"Content-Disposition": f"attachment; filename={filename}.json"},
+            headers={"Content-Disposition": _safe_content_disposition(f"{filename}.json")},
         )
 
 
@@ -416,8 +432,10 @@ async def delete_result(
 
 
 @router.post("/{result_id}/apply-label")
+@_limiter.limit("20/minute")
 async def apply_recommended_label(
     result_id: UUID,
+    request: Request,
     db: DbSessionDep,
     result_service: ResultServiceDep,
     admin: AdminContextDep,

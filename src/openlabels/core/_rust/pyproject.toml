@@ -7,6 +7,13 @@ name = "openlabels_matcher"
 version = "0.1.0"
 description = "High-performance pattern matching for OpenLabels"
 requires-python = ">=3.10"
+classifiers = [
+    "Private :: Do Not Upload",  # Prevents accidental upload to PyPI
+]
+
+[tool.uv]
+# Prevent uv from resolving this package from PyPI (dependency confusion mitigation)
+no-index = true
 
 [tool.maturin]
 features = ["pyo3/extension-module"]

@@ -31,13 +31,37 @@ class WinRMResult:
 
 
 def _validate_host(host: str) -> str:
-    """Validate and sanitize WinRM host parameter to prevent injection."""
+    """Validate and sanitize WinRM host parameter to prevent injection.
+
+    Also blocks private/internal IP ranges to prevent SSRF.
+    """
+    import ipaddress
     import re
+    import socket
+
     # Allow only valid hostnames, FQDNs, and IPv4/IPv6 addresses
     if not re.match(r'^[a-zA-Z0-9._:\[\]-]+$', host):
         raise ValueError(f"Invalid WinRM host: {host!r}")
     if len(host) > 253:
         raise ValueError(f"WinRM host too long: {len(host)} chars")
+
+    # Block private/internal IP ranges
+    from openlabels.core.url_validation import _BLOCKED_NETWORKS
+
+    try:
+        addr_infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as exc:
+        raise ValueError(f"Cannot resolve WinRM host '{host}': {exc}") from exc
+
+    for addr_info in addr_infos:
+        ip_addr = ipaddress.ip_address(addr_info[4][0])
+        for network in _BLOCKED_NETWORKS:
+            if ip_addr in network:
+                raise ValueError(
+                    f"WinRM host '{host}' resolves to private/internal "
+                    f"address ({network}), which is not allowed"
+                )
+
     return host
 
 

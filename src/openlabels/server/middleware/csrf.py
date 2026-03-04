@@ -10,7 +10,10 @@ Protection mechanisms:
 3. SameSite cookie attribute (already set in auth.py)
 """
 
+import hashlib
+import hmac
 import logging
+import posixpath
 import secrets
 from collections.abc import Callable
 
@@ -26,6 +29,7 @@ logger = logging.getLogger(__name__)
 CSRF_COOKIE_NAME = "openlabels_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
 CSRF_TOKEN_LENGTH = 32
+SESSION_COOKIE_NAME = "openlabels_session"
 
 # Methods that require CSRF protection
 PROTECTED_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
@@ -45,9 +49,37 @@ EXEMPT_PATHS = {
 }
 
 
-def generate_csrf_token() -> str:
-    """Generate a secure CSRF token."""
-    return secrets.token_urlsafe(CSRF_TOKEN_LENGTH)
+def _normalize_path(path: str) -> str:
+    """Normalize a URL path: collapse double slashes, resolve dots, strip trailing slash."""
+    # posixpath.normpath collapses // and resolves . / ..
+    normalized = posixpath.normpath(path)
+    # POSIX preserves exactly two leading slashes (//foo); collapse to single slash
+    # since URL paths should always start with a single slash.
+    if normalized.startswith("//"):
+        normalized = "/" + normalized.lstrip("/")
+    # Strip trailing slash for consistent matching (but keep "/" as-is)
+    if normalized != "/" and normalized.endswith("/"):
+        normalized = normalized.rstrip("/")
+    return normalized
+
+
+def _session_binding(session_id: str) -> str:
+    """Derive a short HMAC binding from a session ID.
+
+    Uses the server secret key so that an attacker who learns the session ID
+    cannot independently compute the binding and forge a CSRF token.
+    """
+    settings = get_settings()
+    key = settings.server.secret_key.get_secret_value().encode() or b"openlabels-csrf-fallback"
+    return hmac.new(key, session_id.encode(), hashlib.sha256).hexdigest()[:16]
+
+
+def generate_csrf_token(session_id: str | None = None) -> str:
+    """Generate a secure CSRF token, optionally bound to a session ID."""
+    raw = secrets.token_urlsafe(CSRF_TOKEN_LENGTH)
+    if session_id:
+        return f"{raw}.{_session_binding(session_id)}"
+    return raw
 
 
 def is_same_origin(request: Request) -> bool:
@@ -98,6 +130,7 @@ def validate_csrf_token(request: Request) -> bool:
     Validate CSRF token using double-submit cookie pattern.
 
     The token in the X-CSRF-Token header must match the token in the cookie.
+    If a session cookie is present, the CSRF token must be bound to that session.
     """
     cookie_token = request.cookies.get(CSRF_COOKIE_NAME)
     header_token = request.headers.get(CSRF_HEADER_NAME)
@@ -106,7 +139,18 @@ def validate_csrf_token(request: Request) -> bool:
         return False
 
     # Constant-time comparison to prevent timing attacks
-    return secrets.compare_digest(cookie_token, header_token)
+    if not secrets.compare_digest(cookie_token, header_token):
+        return False
+
+    # If user has a session, verify the CSRF token is bound to it
+    session_id = request.cookies.get(SESSION_COOKIE_NAME)
+    if session_id:
+        expected_suffix = f".{_session_binding(session_id)}"
+        if not cookie_token.endswith(expected_suffix):
+            logger.warning("CSRF: token not bound to current session")
+            return False
+
+    return True
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):
@@ -125,13 +169,23 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         settings = get_settings()
 
-        # Skip CSRF validation for dev mode, but still set the cookie
+        # Skip CSRF validation for dev/test mode only, but still set the cookie
         # so the frontend can read it (apiFetch requires it for POST/PUT/DELETE).
-        if settings.auth.provider == "none" and settings.server.environment == "development":
-            response = await call_next(request)
-            if request.method == "GET" and CSRF_COOKIE_NAME not in request.cookies:
-                self._set_csrf_cookie(request, response)
-            return response
+        # SECURITY: Only bypass CSRF when BOTH conditions are true:
+        # 1. Auth is explicitly disabled (provider="none")
+        # 2. Environment is explicitly development or testing (never staging/production)
+        if settings.auth.provider == "none":
+            if settings.server.environment not in ("development", "testing"):
+                logger.error(
+                    "CSRF: auth.provider='none' in '%s' environment. "
+                    "CSRF protection remains ENABLED. Fix auth configuration.",
+                    settings.server.environment,
+                )
+            else:
+                response = await call_next(request)
+                if request.method == "GET" and CSRF_COOKIE_NAME not in request.cookies:
+                    self._set_csrf_cookie(request, response)
+                return response
 
         # Skip for safe methods
         if request.method not in PROTECTED_METHODS:
@@ -141,12 +195,24 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 self._set_csrf_cookie(request, response)
             return response
 
-        # Skip exempt paths
-        if request.url.path in EXEMPT_PATHS:
+        # Skip exempt paths (normalize to prevent bypass via double slashes, etc.)
+        if _normalize_path(request.url.path) in EXEMPT_PATHS:
             return await call_next(request)
 
-        # Skip WebSocket upgrade requests
+        # WebSocket upgrade requests: skip token check but validate origin
         if request.headers.get("upgrade", "").lower() == "websocket":
+            if not is_same_origin(request):
+                logger.warning(
+                    "CSRF: WebSocket upgrade rejected - origin check failed for %s",
+                    request.url.path,
+                )
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "error": "csrf_validation_failed",
+                        "message": "CSRF validation failed: invalid origin for WebSocket upgrade",
+                    },
+                )
             return await call_next(request)
 
         # Validate CSRF protection
@@ -176,8 +242,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         return response
 
     def _set_csrf_cookie(self, request: Request, response: Response) -> None:
-        """Set CSRF token cookie."""
-        token = generate_csrf_token()
+        """Set CSRF token cookie, bound to session if available."""
+        session_id = request.cookies.get(SESSION_COOKIE_NAME)
+        token = generate_csrf_token(session_id)
         # SECURITY: Detect HTTPS via X-Forwarded-Proto for TLS-terminating reverse proxies
         is_secure = (
             request.url.scheme == "https"

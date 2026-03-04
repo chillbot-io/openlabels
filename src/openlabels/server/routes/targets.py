@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -532,10 +532,18 @@ async def update_target(
         if request.enabled is not None:
             target.enabled = request.enabled
 
+        # SECURITY: Exclude config from audit log to prevent credential leakage.
+        # Config may contain plaintext passwords, API keys, and connection strings.
+        audit_changes = {
+            k: v for k, v in request.model_dump(exclude_unset=True).items()
+            if k != "config"
+        }
+        if request.config is not None:
+            audit_changes["config"] = "[REDACTED]"
         audit_log(
             session, tenant_id=user.tenant_id, user_id=user.id,
             action="target_updated", resource_type="scan_target", resource_id=target.id,
-            details={"changes": request.model_dump(exclude_unset=True)},
+            details={"changes": audit_changes},
         )
 
         return TargetResponse.from_target(target)

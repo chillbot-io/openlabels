@@ -177,6 +177,62 @@ class StanfordPHIDetector(BaseDetector):
         # Fall back to HuggingFace Hub (will download on first use)
         return DEFAULT_PHI_MODEL
 
+    def _verify_cached_model_integrity(self, model_id: str) -> None:
+        """Run SHA-256 integrity check on the cached model directory.
+
+        Locates the HuggingFace cache directory for the loaded model and
+        verifies file integrity using the same TOFU scheme as GLiNER.
+        Raises RuntimeError on mismatch to prevent use of a compromised model.
+        """
+        try:
+            from .model_integrity import verify_model_integrity
+
+            cache_dir: Path | None = None
+
+            # If model_id is already a local path, use it directly
+            local_path = Path(model_id)
+            if local_path.is_dir():
+                cache_dir = local_path
+            else:
+                # Resolve from HuggingFace cache
+                try:
+                    from huggingface_hub import snapshot_download
+                    cache_dir = Path(snapshot_download(
+                        model_id, local_files_only=True,
+                    ))
+                except (FileNotFoundError, ConnectionError, RuntimeError, ImportError) as e:
+                    logger.debug(
+                        "Failed to locate cached Stanford PHI model %s: %s",
+                        model_id, e,
+                    )
+
+            if cache_dir and cache_dir.exists():
+                integrity_ok = verify_model_integrity(
+                    cache_dir, model_name=model_id,
+                )
+                if not integrity_ok:
+                    self._loaded = False
+                    self._pipeline = None
+                    raise RuntimeError(
+                        f"Stanford PHI model integrity verification FAILED for "
+                        f"'{model_id}' at {cache_dir}. Refusing to load "
+                        f"a potentially compromised model."
+                    )
+            else:
+                logger.debug(
+                    "stanford_phi: could not locate cache directory for '%s', "
+                    "skipping integrity verification.",
+                    model_id,
+                )
+        except RuntimeError:
+            raise  # Re-raise integrity failures — do not swallow
+        except Exception as e:
+            # Don't let non-security errors in integrity checking break model loading
+            logger.warning(
+                "stanford_phi: integrity verification error for '%s': %s",
+                model_id, e,
+            )
+
     def load(self) -> bool:
         """Load the Stanford de-identifier model.
 
@@ -202,6 +258,10 @@ class StanfordPHIDetector(BaseDetector):
             )
             self._loaded = True
             logger.info("Stanford PHI detector loaded: %s", model_id)
+
+            # Verify model integrity after loading
+            self._verify_cached_model_integrity(model_id)
+
             return True
         except OSError as e:
             logger.warning("stanford_phi: failed to load model from %s: %s", model_id, e)

@@ -165,7 +165,7 @@ class PolicyCreate(BaseModel):
     """Request to create a custom policy."""
 
     name: str = Field(..., max_length=255)
-    description: str | None = None
+    description: str | None = Field(None, max_length=2000)
     framework: str = Field(..., max_length=50)
     risk_level: str = Field("high", max_length=20)
     enabled: bool = True
@@ -177,7 +177,7 @@ class PolicyUpdate(BaseModel):
     """Request to update a policy (partial)."""
 
     name: str | None = Field(None, max_length=255)
-    description: str | None = None
+    description: str | None = Field(None, max_length=2000)
     framework: str | None = Field(None, max_length=50)
     risk_level: str | None = Field(None, max_length=20)
     enabled: bool | None = None
@@ -203,7 +203,7 @@ class BuiltinPackResponse(BaseModel):
 class LoadPackRequest(BaseModel):
     """Request to load a built-in pack."""
 
-    pack_name: str
+    pack_name: str = Field(..., max_length=255)
 
 
 class EvaluateRequest(BaseModel):
@@ -303,7 +303,7 @@ class PolicyImportItem(BaseModel):
     """Single policy definition for import."""
 
     name: str = Field(..., max_length=255)
-    description: str | None = None
+    description: str | None = Field(None, max_length=2000)
     framework: str = Field(..., max_length=50)
     risk_level: str = Field("high", max_length=20)
     enabled: bool = True

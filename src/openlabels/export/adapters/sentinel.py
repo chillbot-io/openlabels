@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 from datetime import datetime, timezone
 
 import httpx
@@ -25,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 _API_VERSION = "2016-04-01"
 _MAX_PAYLOAD_MB = 30  # Azure limit per request
+_WORKSPACE_ID_RE = re.compile(r"^[0-9a-fA-F\-]{36}$")
+_LOG_TYPE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,99}$")
 
 
 class SentinelAdapter:
@@ -37,6 +40,14 @@ class SentinelAdapter:
         *,
         log_type: str = "OpenLabels",
     ) -> None:
+        if not _WORKSPACE_ID_RE.match(workspace_id):
+            raise ValueError(
+                f"Invalid Sentinel workspace_id: must be a UUID, got {workspace_id!r}"
+            )
+        if not _LOG_TYPE_RE.match(log_type):
+            raise ValueError(
+                f"Invalid Sentinel log_type: must be alphanumeric/underscore, got {log_type!r}"
+            )
         self._workspace_id = workspace_id
         self._shared_key = shared_key
         self._log_type = log_type
@@ -103,10 +114,14 @@ class SentinelAdapter:
             "time-generated-field": "TimeGenerated",
         }
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                self._url, content=body, headers=headers, timeout=30.0,
-            )
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    self._url, content=body, headers=headers, timeout=30.0,
+                )
+        except (httpx.HTTPError, OSError, ConnectionError) as e:
+            logger.error("Sentinel request failed: %s", e)
+            return 0
 
         if resp.status_code in (200, 202):
             return len(records)

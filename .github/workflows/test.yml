@@ -46,21 +46,27 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]" pip-audit
+          pip install -e ".[dev]" pip-audit bandit detect-secrets
 
       - name: pip audit
         run: pip-audit --strict --desc
 
+      - name: Bandit security linter
+        run: bandit -c pyproject.toml --quiet -r src/ -x tests/,alembic/
+
+      - name: Detect secrets
+        run: detect-secrets scan --baseline .secrets.baseline --exclude-files '(\.lock|\.jsonl|fixtures/)$'
+
   test:
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [lint, security]
     strategy:
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
 
     services:
       postgres:
-        image: postgres:15
+        image: postgres:15.12-alpine3.21
         env:
           POSTGRES_PASSWORD: test
           POSTGRES_DB: openlabels_test
@@ -73,7 +79,7 @@ jobs:
           --health-retries 5
 
       redis:
-        image: redis:7
+        image: redis:7.4.2-alpine3.21
         ports:
           - 6379:6379
         options: >-

@@ -2,8 +2,24 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# Allowlist of approved HuggingFace model repos for ML-based detection.
+# Only models that have been reviewed for safety and correctness should be
+# listed here.  If a user configures a model not on this list, a warning is
+# logged (and loading is blocked when strict_model_allowlist is True).
+APPROVED_MODEL_REPOS: frozenset[str] = frozenset({
+    # GLiNER PII
+    "gretelai/gretel-gliner-bi-base-v1.0",
+    # Multilingual GLiNER PII
+    "E3-JSI/gliner-multi-pii-domains-v1",
+    # Stanford PHI (clinical de-identification)
+    "StanfordAIMI/stanford-deidentifier-base",
+})
 
 
 @dataclass(frozen=True)
@@ -62,6 +78,9 @@ class DetectionConfig:
     # Entity proximity / co-occurrence boosting
     enable_proximity_boost: bool = False
     proximity_window_chars: int = 500
+
+    # Security: reject unapproved models instead of just warning
+    strict_model_allowlist: bool = False
 
     # Tuning
     confidence_threshold: float = 0.65
@@ -155,6 +174,24 @@ class DetectionConfig:
         # keeping labeled (0.85+), state-specific (0.78+), and WDL (0.92).
         ("DRIVER_LICENSE", 0.78),
     )
+
+    def __post_init__(self):
+        """Validate configured model names against the approved allowlist."""
+        _model_fields = {
+            "gliner_model": self.gliner_model,
+            "multilingual_gliner_model": self.multilingual_gliner_model,
+            "phi_model": self.phi_model,
+        }
+        for field_name, model_id in _model_fields.items():
+            if model_id not in APPROVED_MODEL_REPOS:
+                msg = (
+                    f"{field_name}={model_id!r} is not in the approved model "
+                    f"allowlist. Approved models: "
+                    f"{', '.join(sorted(APPROVED_MODEL_REPOS))}"
+                )
+                if self.strict_model_allowlist:
+                    raise ValueError(msg)
+                logger.warning(msg)
 
     @classmethod
     def full(cls) -> DetectionConfig:

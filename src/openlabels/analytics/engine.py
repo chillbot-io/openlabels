@@ -63,8 +63,15 @@ class DuckDBEngine:
 
     @staticmethod
     def _esc(value: str) -> str:
-        """Escape a value for use in a DuckDB SET statement."""
-        return value.replace("'", "''")
+        """Escape a value for use in a DuckDB SET statement.
+
+        Replaces backslashes first (to prevent escape-sequence attacks),
+        then doubles single quotes.  Also rejects semicolons and null
+        bytes to prevent statement injection via DuckDB's parser.
+        """
+        if "\x00" in value or ";" in value:
+            raise ValueError(f"Illegal character in DuckDB SET value: {value!r}")
+        return value.replace("\\", "\\\\").replace("'", "''")
 
     def _configure_remote_storage(self, config) -> None:
         """Install and configure DuckDB extensions for S3/Azure backends."""
@@ -73,19 +80,24 @@ class DuckDBEngine:
         if backend == "s3":
             self._db.execute("INSTALL httpfs; LOAD httpfs;")
             s3 = config.s3
+            # Use DuckDB's secret management instead of interpolating
+            # credentials into SQL strings, which risks log/trace leakage.
+            secret_params = ["TYPE S3"]
             if s3.region:
-                self._db.execute(f"SET s3_region = '{self._esc(s3.region)}';")
+                secret_params.append(f"REGION '{self._esc(s3.region)}'")
             if s3.access_key.get_secret_value():
-                self._db.execute(f"SET s3_access_key_id = '{self._esc(s3.access_key.get_secret_value())}';")
+                secret_params.append(f"KEY_ID '{self._esc(s3.access_key.get_secret_value())}'")
             if s3.secret_key.get_secret_value():
-                self._db.execute(f"SET s3_secret_access_key = '{self._esc(s3.secret_key.get_secret_value())}';")
+                secret_params.append(f"SECRET '{self._esc(s3.secret_key.get_secret_value())}'")
             if s3.endpoint_url:
-                # Strip protocol for DuckDB
                 endpoint = s3.endpoint_url.replace("https://", "").replace("http://", "")
-                self._db.execute(f"SET s3_endpoint = '{self._esc(endpoint)}';")
+                secret_params.append(f"ENDPOINT '{self._esc(endpoint)}'")
                 if s3.endpoint_url.startswith("http://"):
-                    self._db.execute("SET s3_use_ssl = false;")
-                self._db.execute("SET s3_url_style = 'path';")
+                    secret_params.append("USE_SSL false")
+                secret_params.append("URL_STYLE 'path'")
+            self._db.execute(
+                f"CREATE SECRET openlabels_s3 ({', '.join(secret_params)});"
+            )
             logger.info("DuckDB httpfs extension loaded for S3")
 
         elif backend == "azure":
@@ -93,13 +105,17 @@ class DuckDBEngine:
             az = config.azure
             conn_str = az.connection_string.get_secret_value() if az.connection_string else ""
             acct_key = az.account_key.get_secret_value() if az.account_key else ""
+            # Use DuckDB's secret management instead of interpolating
+            # credentials into SQL strings.
+            secret_params = ["TYPE AZURE"]
             if conn_str:
-                self._db.execute(
-                    f"SET azure_storage_connection_string = '{self._esc(conn_str)}';"
-                )
+                secret_params.append(f"CONNECTION_STRING '{self._esc(conn_str)}'")
             elif az.account_name and acct_key:
-                self._db.execute(f"SET azure_account_name = '{self._esc(az.account_name)}';")
-                self._db.execute(f"SET azure_account_key = '{self._esc(acct_key)}';")
+                secret_params.append(f"ACCOUNT_NAME '{self._esc(az.account_name)}'")
+                secret_params.append(f"ACCOUNT_KEY '{self._esc(acct_key)}'")
+            self._db.execute(
+                f"CREATE SECRET openlabels_azure ({', '.join(secret_params)});"
+            )
             logger.info("DuckDB azure extension loaded")
 
     # View definitions: (view_name, glob_pattern)

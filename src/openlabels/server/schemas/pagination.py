@@ -110,7 +110,6 @@ async def paginate_query(
         )
         return PaginatedResponse[UserResponse](**result)
     """
-    # Get total count
     count_query = select(func.count()).select_from(query.subquery())
     count_result = await session.execute(count_query)
     total = count_result.scalar() or 0
@@ -120,7 +119,6 @@ async def paginate_query(
     has_next = pagination.page < total_pages
     has_previous = pagination.page > 1
 
-    # Get paginated results
     paginated_query = query.offset(pagination.offset).limit(pagination.limit)
     result = await session.execute(paginated_query)
     items = result.scalars().all()

@@ -122,6 +122,9 @@ class SessionStore:
             await store.delete("session_id")
     """
 
+    # Maximum number of active sessions allowed per user (M-14).
+    MAX_SESSIONS_PER_USER = 5
+
     def __init__(self, db: AsyncSession):
         self.db = db
 
@@ -144,7 +147,31 @@ class SessionStore:
         session = result.scalar_one_or_none()
 
         if session:
-            return _decrypt_session_data(session.data)
+            data = _decrypt_session_data(session.data)
+            # SECURITY (M-86): Validate OAuth access_token expiry in addition
+            # to session TTL.  The token may expire before the session does.
+            token_expires_at = data.get("token_expires_at")
+            if token_expires_at is not None:
+                try:
+                    if isinstance(token_expires_at, str):
+                        exp_dt = datetime.fromisoformat(token_expires_at)
+                    elif isinstance(token_expires_at, (int, float)):
+                        exp_dt = datetime.fromtimestamp(token_expires_at, tz=timezone.utc)
+                    else:
+                        exp_dt = None
+                    if exp_dt is not None:
+                        if exp_dt.tzinfo is None:
+                            exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                        if exp_dt <= datetime.now(timezone.utc):
+                            logger.info(
+                                "Session %s has an expired OAuth token (expired %s)",
+                                session_id,
+                                exp_dt.isoformat(),
+                            )
+                            return None
+                except (ValueError, TypeError, OSError):
+                    pass  # Malformed expiry — treat as valid to avoid lockout
+            return data
         return None
 
     async def set(
@@ -171,6 +198,31 @@ class SessionStore:
         session_id = _sanitize_id(session_id)
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
         encrypted_data = _encrypt_session_data(data)
+
+        # SECURITY (M-14): Enforce concurrent session limit per user.
+        # Use SELECT ... FOR UPDATE to serialise concurrent session
+        # creation for the same user, preventing the TOCTOU race where
+        # two requests both count N < MAX and both insert.
+        if user_id:
+            lock_result = await self.db.execute(
+                select(Session.id)
+                .where(
+                    Session.user_id == user_id,
+                    Session.expires_at > datetime.now(timezone.utc),
+                )
+                .order_by(Session.expires_at.asc())
+                .with_for_update()
+            )
+            locked_ids = [row[0] for row in lock_result.all()]
+            active_count = len(locked_ids)
+            if active_count >= self.MAX_SESSIONS_PER_USER:
+                # Evict the oldest sessions (already locked, no extra query)
+                evict_count = active_count - self.MAX_SESSIONS_PER_USER + 1
+                ids_to_delete = locked_ids[:evict_count]
+                await self.db.execute(
+                    delete(Session).where(Session.id.in_(ids_to_delete))
+                )
+                await self.db.flush()
 
         stmt = pg_insert(Session).values(
             id=session_id,
@@ -249,6 +301,30 @@ class SessionStore:
             )
         )
         return result.scalar() or 0
+
+    async def _evict_oldest_sessions(self, user_id: str, count: int) -> None:
+        """Delete the *count* oldest active sessions for a user (M-14)."""
+        # Find the IDs of the oldest sessions to evict.
+        oldest = await self.db.execute(
+            select(Session.id)
+            .where(
+                Session.user_id == user_id,
+                Session.expires_at > datetime.now(timezone.utc),
+            )
+            .order_by(Session.expires_at.asc())
+            .limit(count)
+        )
+        ids_to_delete = [row[0] for row in oldest.all()]
+        if ids_to_delete:
+            await self.db.execute(
+                delete(Session).where(Session.id.in_(ids_to_delete))
+            )
+            await self.db.flush()
+            logger.info(
+                "Evicted %d oldest session(s) for user %s (session limit enforced)",
+                len(ids_to_delete),
+                user_id,
+            )
 
 
 class PendingAuthStore:

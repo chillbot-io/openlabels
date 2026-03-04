@@ -216,7 +216,10 @@ class RedisCache:
             # Test connection
             await self._client.ping()
             self._connected = True
-            logger.info(f"Redis cache connected: {self._url}")
+            from urllib.parse import urlparse
+            parsed = urlparse(self._url)
+            safe_url = f"{parsed.scheme}://{parsed.hostname}:{parsed.port or 6379}"
+            logger.info(f"Redis cache connected: {safe_url}")
             return True
 
         except ImportError:

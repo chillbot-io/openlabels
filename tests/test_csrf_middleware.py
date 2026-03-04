@@ -18,8 +18,11 @@ from openlabels.server.middleware.csrf import (
     CSRF_COOKIE_NAME,
     CSRF_HEADER_NAME,
     CSRF_TOKEN_LENGTH,
+    SESSION_COOKIE_NAME,
     PROTECTED_METHODS,
     EXEMPT_PATHS,
+    _normalize_path,
+    _session_binding,
 )
 
 
@@ -73,6 +76,107 @@ class TestGenerateCsrfToken:
         # Check that tokens don't share common suffixes
         suffixes = [t[-8:] for t in tokens]
         assert len(set(suffixes)) > 45, "Tokens should have diverse suffixes"
+
+    def test_token_with_session_binding(self):
+        """Token generated with session ID should include binding suffix."""
+        token = generate_csrf_token(session_id="test-session-123")
+        assert "." in token, "Session-bound token should contain a dot separator"
+        raw_part, binding_part = token.rsplit(".", 1)
+        assert len(raw_part) >= 40, "Raw part should still have full entropy"
+        assert len(binding_part) == 16, "Binding hash should be 16 hex chars"
+
+    def test_token_without_session_has_no_dot(self):
+        """Token generated without session should not have a binding suffix."""
+        token = generate_csrf_token()
+        assert "." not in token, "Non-session token should not contain a dot"
+
+    def test_different_sessions_produce_different_bindings(self):
+        """Tokens for different sessions should have different binding suffixes."""
+        token_a = generate_csrf_token(session_id="session-a")
+        token_b = generate_csrf_token(session_id="session-b")
+        suffix_a = token_a.rsplit(".", 1)[1]
+        suffix_b = token_b.rsplit(".", 1)[1]
+        assert suffix_a != suffix_b, "Different sessions should produce different bindings"
+
+
+# =============================================================================
+# PATH NORMALIZATION TESTS
+# =============================================================================
+
+
+class TestPathNormalization:
+    """Tests for path normalization used in CSRF exempt path matching."""
+
+    def test_double_slashes_collapsed(self):
+        assert _normalize_path("//health") == "/health"
+
+    def test_multiple_slashes_collapsed(self):
+        assert _normalize_path("///api///v1///auth///callback") == "/api/v1/auth/callback"
+
+    def test_trailing_slash_stripped(self):
+        assert _normalize_path("/health/") == "/health"
+
+    def test_dot_segments_resolved(self):
+        assert _normalize_path("/api/v1/../v1/auth/callback") == "/api/v1/auth/callback"
+
+    def test_root_path_preserved(self):
+        assert _normalize_path("/") == "/"
+
+    def test_normal_path_unchanged(self):
+        assert _normalize_path("/api/v1/auth/callback") == "/api/v1/auth/callback"
+
+
+# =============================================================================
+# SESSION BINDING VALIDATION TESTS
+# =============================================================================
+
+
+class TestSessionBindingValidation:
+    """Tests for CSRF token session binding in validate_csrf_token."""
+
+    def _create_request(self, cookie_token=None, header_token=None, session_id=None):
+        """Helper to create mock request with tokens and optional session."""
+        request = Mock()
+        request.cookies = {}
+        request.headers = {}
+        if cookie_token is not None:
+            request.cookies[CSRF_COOKIE_NAME] = cookie_token
+        if header_token is not None:
+            request.headers[CSRF_HEADER_NAME] = header_token
+        if session_id is not None:
+            request.cookies[SESSION_COOKIE_NAME] = session_id
+        return request
+
+    def test_session_bound_token_validates(self):
+        """Token bound to correct session should validate."""
+        session_id = "my-session-id"
+        token = generate_csrf_token(session_id=session_id)
+        request = self._create_request(
+            cookie_token=token, header_token=token, session_id=session_id
+        )
+        assert validate_csrf_token(request) is True
+
+    def test_session_bound_token_wrong_session_rejected(self):
+        """Token bound to one session should not validate for a different session."""
+        token = generate_csrf_token(session_id="session-a")
+        request = self._create_request(
+            cookie_token=token, header_token=token, session_id="session-b"
+        )
+        assert validate_csrf_token(request) is False
+
+    def test_unbound_token_rejected_when_session_present(self):
+        """Token without session binding should be rejected when a session exists."""
+        token = generate_csrf_token()  # No session binding
+        request = self._create_request(
+            cookie_token=token, header_token=token, session_id="some-session"
+        )
+        assert validate_csrf_token(request) is False
+
+    def test_unbound_token_accepted_without_session(self):
+        """Token without session binding should be accepted when no session exists."""
+        token = generate_csrf_token()
+        request = self._create_request(cookie_token=token, header_token=token)
+        assert validate_csrf_token(request) is True
 
 
 # =============================================================================
@@ -345,6 +449,7 @@ class TestCSRFMiddleware:
         """Mock settings with auth disabled (dev mode)."""
         settings = Mock()
         settings.auth.provider = "none"
+        settings.server.environment = "development"
         return settings
 
     async def test_safe_methods_pass_through(self, middleware, mock_call_next, mock_settings_enabled):
@@ -356,11 +461,23 @@ class TestCSRFMiddleware:
                 assert response is not None
 
     async def test_dev_mode_skips_csrf(self, middleware, mock_call_next, mock_settings_disabled):
-        """Dev mode (auth.provider=none) should skip CSRF checks."""
+        """Dev mode (auth.provider=none, environment=development) should skip CSRF checks."""
         with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings_disabled):
             request = self._create_request(method="POST")
             response = await middleware.dispatch(request, mock_call_next)
             assert response is not None
+
+    async def test_auth_none_in_production_keeps_csrf(self, middleware, mock_call_next):
+        """auth.provider=none in production should NOT skip CSRF (M-3 guard)."""
+        settings = Mock()
+        settings.auth.provider = "none"
+        settings.server.environment = "production"
+        settings.cors.allowed_origins = ["https://app.example.com"]
+        with patch("openlabels.server.middleware.csrf.get_settings", return_value=settings):
+            request = self._create_request(method="POST", origin="https://evil.com")
+            response = await middleware.dispatch(request, mock_call_next)
+            # CSRF should remain enabled, so the invalid origin is rejected
+            assert response.status_code == 403
 
     async def test_protected_methods_require_origin(self, middleware, mock_call_next, mock_settings_enabled):
         """Protected methods require valid origin."""
@@ -374,21 +491,22 @@ class TestCSRFMiddleware:
                 # Should return 403 error response
                 assert response.status_code == 403
 
-    async def test_valid_origin_passes(self, middleware, mock_call_next, mock_settings_enabled):
-        """Valid origin with Bearer auth should pass CSRF check."""
+    async def test_valid_origin_and_token_passes(self, middleware, mock_call_next, mock_settings_enabled):
+        """Valid origin with matching CSRF tokens should pass."""
         with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings_enabled):
+            token = generate_csrf_token()
             request = self._create_request(
                 method="POST",
-                origin="https://app.example.com"  # Valid origin
+                origin="https://app.example.com",  # Valid origin
+                cookie_token=token,
+                header_token=token,
             )
-            # Provide Bearer auth so the double-submit token check is skipped
-            request.headers["authorization"] = "Bearer test-token"
             response = await middleware.dispatch(request, mock_call_next)
             # When CSRF passes, the mock response from call_next is returned
             # (which doesn't have status_code). When CSRF fails, we get 403.
             if hasattr(response, 'status_code'):
                 assert response.status_code != 403, \
-                    "Valid origin should not be rejected with 403"
+                    "Valid origin + matching tokens should not be rejected with 403"
 
     async def test_exempt_paths_skip_csrf(self, middleware, mock_call_next, mock_settings_enabled):
         """Exempt paths should skip CSRF validation."""
@@ -403,17 +521,30 @@ class TestCSRFMiddleware:
                 # Should pass through for exempt paths
                 assert response is not None
 
-    async def test_websocket_upgrade_skips_csrf(self, middleware, mock_call_next, mock_settings_enabled):
-        """WebSocket upgrade requests should skip CSRF."""
+    async def test_websocket_upgrade_valid_origin_passes(self, middleware, mock_call_next, mock_settings_enabled):
+        """WebSocket upgrade requests with valid origin should pass (no token needed)."""
         with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings_enabled):
             request = self._create_request(
                 method="POST",  # WebSocket handshake can be POST
+                origin="https://app.example.com"
+            )
+            request.headers["upgrade"] = "websocket"
+            response = await middleware.dispatch(request, mock_call_next)
+            # Should pass through without requiring CSRF token
+            assert response is not None
+            if hasattr(response, 'status_code'):
+                assert response.status_code != 403
+
+    async def test_websocket_upgrade_invalid_origin_rejected(self, middleware, mock_call_next, mock_settings_enabled):
+        """WebSocket upgrade requests with invalid origin should be rejected."""
+        with patch("openlabels.server.middleware.csrf.get_settings", return_value=mock_settings_enabled):
+            request = self._create_request(
+                method="POST",
                 origin="https://evil.com"
             )
             request.headers["upgrade"] = "websocket"
             response = await middleware.dispatch(request, mock_call_next)
-            # Should pass through
-            assert response is not None
+            assert response.status_code == 403
 
     async def test_double_submit_token_validation(self, middleware, mock_call_next, mock_settings_enabled):
         """When CSRF header is present, token must match cookie."""

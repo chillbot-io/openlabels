@@ -28,29 +28,11 @@ GRAPH_API_BASE = "https://graph.microsoft.com/v1.0"
 # Scopes for client credentials flow (no user context)
 GRAPH_SCOPES = ["https://graph.microsoft.com/.default"]
 
-# Pattern to detect OData injection: only match operator-like patterns that
-# are NOT likely to be legitimate names.  Keyword-only matching (\bor\b etc.)
-# causes false positives for names like "Anderson", "Norton", "Martin Lee".
-# Instead we look for OData operator syntax: keyword followed by space and
-# operand, or function call syntax.
-_ODATA_INJECTION_PATTERN = re.compile(
-    r"("
-    r"\beq\s+|"       # eq <value>
-    r"\bne\s+|"       # ne <value>
-    r"\bgt\s+|"       # gt <value>
-    r"\blt\s+|"       # lt <value>
-    r"\bge\s+|"       # ge <value>
-    r"\ble\s+|"       # le <value>
-    r"\bor\s+\w+\s+(eq|ne|gt|lt|ge|le)\b|"  # or <field> eq — real injection
-    r"\band\s+\w+\s+(eq|ne|gt|lt|ge|le)\b|" # and <field> eq — real injection
-    r"\bnot\s+\w+\s+(eq|ne|gt|lt|ge|le)\b|" # not <field> eq
-    r"\bstartswith\s*\(|"
-    r"\bendswith\s*\(|"
-    r"\bcontains\s*\(|"
-    r"\bsubstringof\s*\("
-    r")",
-    re.IGNORECASE,
-)
+# Allowlist for safe OData filter values.  After NFC normalization, only
+# characters that can legitimately appear in user names, email addresses,
+# SIDs, and UPNs are permitted.  This is strictly safer than the previous
+# blocklist approach which could be bypassed with Unicode substitutions.
+_ODATA_SAFE_VALUE = re.compile(r"^[a-zA-Z0-9\s\-_.@\\]+$")
 
 
 def escape_odata_string(value: str) -> str:
@@ -75,25 +57,17 @@ def escape_odata_string(value: str) -> str:
     if not isinstance(value, str):
         raise ValueError("OData value must be a string")
 
-    # Normalize to NFC to prevent Unicode bypass of blocklist
+    # Normalize to NFC first so that Unicode look-alikes (e.g. Cyrillic 'е')
+    # are collapsed before the allowlist check.
     value = unicodedata.normalize("NFC", value)
 
-    # Check for potentially malicious OData operators/functions
-    if _ODATA_INJECTION_PATTERN.search(value):
-        logger.warning(f"Potential OData injection attempt detected in value: {value[:100]}")
-        raise ValueError("Invalid characters in filter value")
-
-    # Check for other suspicious patterns
-    if "'" in value and ("(" in value or ")" in value):
-        # Combination of quotes and parentheses is suspicious
-        logger.warning(f"Suspicious pattern detected in OData value: {value[:100]}")
+    # Allowlist: reject any character not expected in names, emails, SIDs, UPNs.
+    if not _ODATA_SAFE_VALUE.match(value):
+        logger.warning("OData value rejected by allowlist: %s", value[:100])
         raise ValueError("Invalid characters in filter value")
 
     # Escape single quotes by doubling them (OData standard)
     escaped = value.replace("'", "''")
-
-    # Also escape backslashes for extra safety
-    escaped = escaped.replace("\\", "\\\\")
 
     return escaped
 
@@ -213,14 +187,26 @@ class GraphClient:
                 return self._access_token
 
         # Acquire new token — MSAL is synchronous, so offload to a thread
-        # to avoid blocking the async event loop
-        result = await asyncio.to_thread(
-            self._msal_app.acquire_token_for_client, scopes=GRAPH_SCOPES
-        )
+        # to avoid blocking the async event loop.
+        # SECURITY (M-24): Wrap in asyncio.wait_for to prevent indefinite
+        # hangs if the token endpoint is unresponsive.
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    self._msal_app.acquire_token_for_client, scopes=GRAPH_SCOPES
+                ),
+                timeout=30.0,
+            )
+        except asyncio.TimeoutError:
+            logger.error("Graph API token acquisition timed out after 30s")
+            raise RuntimeError("Graph API token acquisition timed out")
 
         if "access_token" not in result:
-            error = result.get("error_description", result.get("error", "Unknown error"))
-            raise RuntimeError(f"Failed to acquire Graph API token: {error}")
+            logger.error(
+                "Failed to acquire Graph API token: %s",
+                result.get("error_description", result.get("error", "Unknown error")),
+            )
+            raise RuntimeError("Failed to acquire Graph API token")
 
         self._access_token = result["access_token"]
         # Token typically valid for 1 hour

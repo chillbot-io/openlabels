@@ -555,9 +555,7 @@ async def execute_query(
                 detail="No data available for the queried table yet",
             )
         logger.warning("Query execution failed: %s", error_msg)
-        # Truncate to first line and limit length to avoid leaking internal details
-        safe_msg = error_msg.split("\n")[0][:200] if error_msg else "Unknown error"
-        raise HTTPException(status_code=400, detail=f"Query error: {safe_msg}")
+        raise HTTPException(status_code=400, detail="Query execution failed")
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
     truncated = len(rows) > body.limit

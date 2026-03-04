@@ -68,6 +68,16 @@ class ModelSpec:
     # If the first file in an alternative group exists, skip the rest
     alternatives: dict[str, list[str]] = field(default_factory=dict)
 
+    def __post_init__(self):
+        missing = [mf.filename for mf in self.files if not mf.sha256]
+        if missing:
+            logger.warning(
+                "Model %r has %d file(s) without SHA-256 checksums: %s. "
+                "Populate checksums from a verified download to enable "
+                "integrity verification.",
+                self.name, len(missing), ", ".join(missing),
+            )
+
     def get_install_dir(self, models_dir: Path) -> Path:
         if self.install_subdir:
             return models_dir / self.install_subdir
@@ -111,17 +121,30 @@ class ModelSpec:
 # HuggingFace repo IDs are placeholders until the user publishes models.
 # The download logic works with any valid HF repo.
 
+# TODO(security): Replace empty sha256 values below with checksums computed
+# from a verified download.  Run:
+#   python -c "import hashlib,sys; h=hashlib.sha256();
+#     [h.update(c) for c in iter(lambda:open(sys.argv[1],'rb').read(65536),b'')];
+#     print(h.hexdigest())" <file>
+# The download_model() function already warns at runtime when a checksum is
+# missing, and verifies the hash before copying when one is present.
+
 _PHI_SPEC = ModelSpec(
     name="phi",
     description="Stanford Clinical De-identifier (PubMedBERT, token classification)",
     repo_id="StanfordAIMI/stanford-deidentifier-base",
     install_subdir="stanford_phi",
     files=[
-        ModelFile("pytorch_model.bin", size_bytes=438_000_000),
-        ModelFile("config.json", size_bytes=1_200),
-        ModelFile("vocab.txt", size_bytes=226_000),
-        ModelFile("special_tokens_map.json", size_bytes=112),
-        ModelFile("tokenizer_config.json", size_bytes=29),
+        ModelFile("pytorch_model.bin", size_bytes=438_000_000,
+                  sha256=""),  # fill from verified download
+        ModelFile("config.json", size_bytes=1_200,
+                  sha256=""),  # fill from verified download
+        ModelFile("vocab.txt", size_bytes=226_000,
+                  sha256=""),  # fill from verified download
+        ModelFile("special_tokens_map.json", size_bytes=112,
+                  sha256=""),  # fill from verified download
+        ModelFile("tokenizer_config.json", size_bytes=29,
+                  sha256=""),  # fill from verified download
     ],
 )
 
@@ -131,9 +154,12 @@ _OCR_SPEC = ModelSpec(
     repo_id="chillbot-io/openlabels-ocr",
     install_subdir="rapidocr",
     files=[
-        ModelFile("det.onnx", size_bytes=4_500_000),
-        ModelFile("rec.onnx", size_bytes=11_000_000),
-        ModelFile("cls.onnx", size_bytes=1_500_000),
+        ModelFile("det.onnx", size_bytes=4_500_000,
+                  sha256=""),  # fill from verified download
+        ModelFile("rec.onnx", size_bytes=11_000_000,
+                  sha256=""),  # fill from verified download
+        ModelFile("cls.onnx", size_bytes=1_500_000,
+                  sha256=""),  # fill from verified download
     ],
 )
 
@@ -183,13 +209,18 @@ def resolve_names(names: list[str]) -> list[str]:
 
 
 # Download
-def _verify_sha256(path: Path, expected: str) -> bool:
-    """Verify file SHA-256 checksum."""
+def _compute_sha256(path: Path | str) -> str:
+    """Compute SHA-256 hex digest for a file."""
     h = hashlib.sha256()
     with open(path, "rb") as f:
         for chunk in iter(lambda: f.read(65536), b""):
             h.update(chunk)
-    return h.hexdigest() == expected
+    return h.hexdigest()
+
+
+def _verify_sha256(path: Path, expected: str) -> bool:
+    """Verify file SHA-256 checksum."""
+    return _compute_sha256(path) == expected
 
 
 def download_model(
@@ -254,23 +285,27 @@ def download_model(
             filename=mf.repo_path,
         )
 
-        # Copy from HF cache to our models directory
-        shutil.copy2(cached_path, target)
-
-        # Verify checksum if available
+        # Verify checksum BEFORE copying to target to avoid TOCTOU race
         if mf.sha256:
-            if not _verify_sha256(target, mf.sha256):
-                target.unlink()
+            if not _verify_sha256(cached_path, mf.sha256):
                 raise OSError(
                     f"Checksum mismatch for {mf.filename}. "
                     f"Expected {mf.sha256[:16]}..."
                 )
             logger.debug(f"  Checksum verified for {mf.filename}")
         else:
+            # Compute and log the checksum so operators can populate the
+            # registry from a verified download.
+            actual = _compute_sha256(cached_path)
             logger.warning(
-                f"No SHA-256 checksum configured for {mf.filename} in model "
-                f"{spec.name!r} — file integrity was not verified"
+                "No SHA-256 checksum configured for %s in model %r — "
+                "file integrity was NOT verified.  Computed sha256: %s  "
+                "Add this to model_registry.py to enable verification.",
+                mf.filename, spec.name, actual,
             )
+
+        # Copy from HF cache to our models directory (after verification)
+        shutil.copy2(cached_path, target)
 
         downloaded.append(mf.filename)
         if progress_callback:
@@ -301,3 +336,28 @@ def download_all(
             progress_callback=progress_callback,
         )
     return results
+
+
+def compute_installed_checksums(
+    models_dir: Path | None = None,
+) -> dict[str, dict[str, str]]:
+    """Compute SHA-256 checksums for all installed model files.
+
+    Returns a nested dict: ``{model_name: {filename: sha256_hex}}``.
+    Useful for populating the registry from a verified download.
+    """
+    if models_dir is None:
+        from openlabels.core.constants import DEFAULT_MODELS_DIR
+        models_dir = DEFAULT_MODELS_DIR
+
+    result: dict[str, dict[str, str]] = {}
+    for name, spec in _REGISTRY.items():
+        install_dir = spec.get_install_dir(models_dir)
+        file_hashes: dict[str, str] = {}
+        for mf in spec.files:
+            path = install_dir / mf.filename
+            if path.exists():
+                file_hashes[mf.filename] = _compute_sha256(path)
+        if file_hashes:
+            result[name] = file_hashes
+    return result

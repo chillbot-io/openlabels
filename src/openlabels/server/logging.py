@@ -79,6 +79,21 @@ class JSONFormatter(logging.Formatter):
     }
     """
 
+    # SECURITY: Sensitive field names that must be redacted from JSON log output.
+    # Matched case-insensitively against extra field keys.
+    _SENSITIVE_FIELDS = frozenset({
+        "token", "access_token", "refresh_token", "id_token",
+        "secret", "client_secret", "secret_key",
+        "password", "passwd",
+        "authorization",
+        "cookie", "session_cookie",
+        "api_key", "apikey",
+    })
+
+    def _is_sensitive(self, key: str) -> bool:
+        """Check if a field name matches the sensitive blocklist."""
+        return key.lower() in self._SENSITIVE_FIELDS
+
     def format(self, record: logging.LogRecord) -> str:
         log_data: dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -121,6 +136,10 @@ class JSONFormatter(logging.Formatter):
         }
         for key, value in record.__dict__.items():
             if key not in skip_attrs and not key.startswith("_"):
+                # SECURITY: Redact fields whose names match the sensitive blocklist
+                if self._is_sensitive(key):
+                    log_data[key] = "[REDACTED]"
+                    continue
                 try:
                     # Ensure value is JSON serializable
                     json.dumps(value)

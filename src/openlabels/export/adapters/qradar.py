@@ -41,6 +41,8 @@ class QRadarAdapter(SyslogTransportMixin):
         use_tls: bool = False,
         fmt: str = "leef",
     ) -> None:
+        from openlabels.core.url_validation import validate_host
+        validate_host(syslog_host, syslog_port, name="QRadar syslog host")
         self._host = syslog_host
         self._port = syslog_port
         self._protocol = protocol.lower()

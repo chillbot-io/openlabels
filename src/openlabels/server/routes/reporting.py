@@ -249,24 +249,24 @@ class ComplianceTrendResponse(BaseModel):
 
 
 class ReportGenerateRequest(BaseModel):
-    report_type: str = Field(..., description="Report type (executive_summary, compliance_report, scan_detail, access_audit, sensitive_files)")
-    format: str = Field(default="html", description="Output format: html, pdf, csv")
+    report_type: str = Field(..., max_length=100, description="Report type (executive_summary, compliance_report, scan_detail, access_audit, sensitive_files)")
+    format: str = Field(default="html", max_length=10, description="Output format: html, pdf, csv")
     name: str | None = Field(default=None, max_length=255, description="Optional friendly name")
     job_id: UUID | None = Field(default=None, description="Scope to a specific scan job")
     filters: dict | None = Field(default=None, description="Additional query filters")
 
 
 class ReportScheduleRequest(BaseModel):
-    report_type: str = Field(..., description="Report type to schedule")
-    format: str = Field(default="html", description="Output format: html, pdf, csv")
-    cron: str = Field(..., description="Cron expression (e.g., '0 9 * * MON')")
+    report_type: str = Field(..., max_length=100, description="Report type to schedule")
+    format: str = Field(default="html", max_length=10, description="Output format: html, pdf, csv")
+    cron: str = Field(..., max_length=100, description="Cron expression (e.g., '0 9 * * MON')")
     name: str | None = Field(default=None, max_length=255, description="Schedule name")
-    distribute_to: list[str] | None = Field(default=None, description="Email addresses for distribution")
+    distribute_to: list[str] | None = Field(default=None, max_length=50, description="Email addresses for distribution")
 
 
 class ReportDistributeRequest(BaseModel):
-    to: list[str] = Field(..., min_length=1, description="List of email addresses")
-    subject: str | None = Field(default=None, description="Custom email subject")
+    to: list[str] = Field(..., min_length=1, max_length=50, description="List of email addresses")
+    subject: str | None = Field(default=None, max_length=255, description="Custom email subject")
 
 
 class ReportResponse(BaseModel):
@@ -295,10 +295,12 @@ async def _build_report_data(
 ) -> dict:
     """Query the database and assemble data context for report templates."""
 
-    # PERF: Cap result set to prevent unbounded memory usage.  For very
-    # large tenants the aggregations below are computed over this window;
-    # future work could stream rows or push aggregation into SQL.
-    _REPORT_ROW_LIMIT = 50_000
+    # PERF (M-28): Cap result set to prevent OOM under concurrent report
+    # generation.  50K ORM objects per request can exhaust memory when
+    # multiple reports run simultaneously.  10K is sufficient for
+    # meaningful aggregations; very large tenants should use export/CSV
+    # streaming instead.  Future work: push aggregation into SQL.
+    _REPORT_ROW_LIMIT = 10_000
 
     base_query = select(ScanResult).where(ScanResult.tenant_id == tenant_id)
     if job_id:

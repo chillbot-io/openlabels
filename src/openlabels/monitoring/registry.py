@@ -506,7 +506,7 @@ def _enable_batch_linux(
     # Use shlex.quote() for all user-provided paths to prevent
     # shell injection via crafted filenames.
     commands = "\n".join(
-        f'auditctl -w {shlex.quote(str(p))} -p rwa -k openlabels && echo "OK:{p}" || echo "FAIL:{p}"'
+        f'auditctl -w {shlex.quote(str(p))} -p rwa -k openlabels && echo "OK:"{shlex.quote(str(p))} || echo "FAIL:"{shlex.quote(str(p))}'
         for p in validated
     )
 

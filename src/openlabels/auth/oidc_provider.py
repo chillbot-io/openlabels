@@ -107,6 +107,20 @@ async def get_discovery(discovery_url: str) -> dict[str, Any]:
                 f"required fields: {', '.join(missing)}"
             )
 
+        # SECURITY (M-88): Validate that the issuer in the discovery
+        # document matches the expected issuer derived from the
+        # discovery URL.  Per RFC 8414 s3.3, the issuer value returned
+        # MUST be identical to the issuer used to construct the URL.
+        expected_issuer = discovery_url.removesuffix(
+            "/.well-known/openid-configuration"
+        )
+        actual_issuer = doc["issuer"].rstrip("/")
+        if actual_issuer != expected_issuer.rstrip("/"):
+            raise ValueError(
+                f"OIDC issuer mismatch: discovery URL implies issuer "
+                f"'{expected_issuer}' but document contains '{doc['issuer']}'"
+            )
+
         _discovery_cache[discovery_url] = (doc, time.monotonic())
         logger.info("Cached OIDC discovery document from %s", discovery_url)
         return doc
@@ -274,15 +288,16 @@ async def validate_id_token(
         key_data = await _find_signing_key(kid, jwks_uri)
         signing_key = jwt.PyJWK(key_data)
 
-        # Some providers use RS256, others ES256 — accept common algorithms
-        algorithms = unverified_header.get("alg", "RS256")
-        if algorithms not in ("RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256"):
-            raise TokenInvalidError(f"Unsupported algorithm: {algorithms}")
+        # Pin allowed algorithms to a safe list instead of trusting
+        # the unverified token header (M-2). This prevents algorithm
+        # confusion attacks where an attacker could specify "none" or
+        # "HS256" (symmetric) in the header to bypass signature verification.
+        _ALLOWED_ALGORITHMS = ["RS256", "RS384", "RS512", "ES256", "ES384", "ES512", "PS256"]
 
         claims = jwt.decode(
             id_token,
             signing_key,
-            algorithms=[algorithms],
+            algorithms=_ALLOWED_ALGORITHMS,
             audience=config.client_id,
             issuer=issuer,
             options={"verify_at_hash": False},  # Not all providers include at_hash
@@ -379,7 +394,15 @@ async def refresh_token(
                 error_body = {"error": "unknown"}
             return {"error": error_body.get("error", "refresh_failed")}
 
-        return resp.json()
+        token_response = resp.json()
+
+        # SECURITY (M-87): If the provider rotated the refresh token,
+        # use the new one.  If no new refresh_token is returned, keep
+        # the original so callers always have a usable value.
+        if "refresh_token" not in token_response:
+            token_response["refresh_token"] = refresh_token_value
+
+        return token_response
 
 
 def get_end_session_url(

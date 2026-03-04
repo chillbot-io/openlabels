@@ -83,3 +83,45 @@ def validate_url(url: str, *, name: str = "URL") -> str:
                 )
 
     return url
+
+
+def validate_host(host: str, port: int, *, name: str = "host") -> str:
+    """Validate that a hostname/IP does not target private/internal addresses.
+
+    Same SSRF protection as ``validate_url`` but for raw host:port used by
+    syslog-based adapters (QRadar, generic syslog/CEF).
+
+    Returns:
+        The validated hostname if it passes all checks.
+
+    Raises:
+        ValueError: If the host is unresolvable or targets a blocked network.
+    """
+    if not host:
+        raise ValueError(f"{name} must not be empty")
+
+    try:
+        addr_infos = socket.getaddrinfo(
+            host, port, proto=socket.IPPROTO_TCP,
+        )
+    except socket.gaierror as exc:
+        raise ValueError(
+            f"Cannot resolve {name} '{host}': {exc}"
+        ) from exc
+
+    if not addr_infos:
+        raise ValueError(
+            f"Cannot resolve {name} '{host}': no addresses found"
+        )
+
+    for addr_info in addr_infos:
+        ip_str = addr_info[4][0]
+        ip_addr = ipaddress.ip_address(ip_str)
+        for network in _BLOCKED_NETWORKS:
+            if ip_addr in network:
+                raise ValueError(
+                    f"{name} '{host}' resolves to private/internal "
+                    f"address {ip_str} (in {network}). This is not allowed."
+                )
+
+    return host

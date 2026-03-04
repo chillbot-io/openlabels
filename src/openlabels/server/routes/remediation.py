@@ -132,9 +132,9 @@ def _decode_acl(encoded: str) -> dict:
 class QuarantineRequest(BaseModel):
     """Request to quarantine a file."""
 
-    file_path: str = Field(..., description="Path to file to quarantine")
+    file_path: str = Field(..., max_length=4096, description="Path to file to quarantine")
     quarantine_dir: str | None = Field(
-        None, description="Custom quarantine directory (default: .quarantine)"
+        None, max_length=4096, description="Custom quarantine directory (default: .quarantine)"
     )
     dry_run: bool = Field(
         False, description="Preview action without executing"
@@ -144,9 +144,9 @@ class QuarantineRequest(BaseModel):
 class LockdownRequest(BaseModel):
     """Request to lock down a file (restrict permissions)."""
 
-    file_path: str = Field(..., description="Path to file to lock down")
+    file_path: str = Field(..., max_length=4096, description="Path to file to lock down")
     allowed_principals: list[str] = Field(
-        ..., description="List of users/groups allowed access (e.g., ['DOMAIN\\\\Admin'])"
+        ..., max_length=100, description="List of users/groups allowed access (e.g., ['DOMAIN\\\\Admin'])"
     )
     dry_run: bool = Field(
         False, description="Preview action without executing"
@@ -156,8 +156,8 @@ class LockdownRequest(BaseModel):
 class LabelApplyRequest(BaseModel):
     """Request to apply a sensitivity label as a remediation action."""
 
-    file_path: str = Field(..., description="Path to file to label")
-    label_id: str = Field(..., description="Sensitivity label ID to apply")
+    file_path: str = Field(..., max_length=4096, description="Path to file to label")
+    label_id: str = Field(..., max_length=255, description="Sensitivity label ID to apply")
     dry_run: bool = Field(
         False, description="Preview action without executing"
     )
@@ -175,29 +175,29 @@ class RollbackRequest(BaseModel):
 class BulkRemediationItem(BaseModel):
     """A single item in a bulk remediation request."""
 
-    file_path: str = Field(..., description="Path to file")
+    file_path: str = Field(..., max_length=4096, description="Path to file")
 
 
 class BulkRemediationRequest(BaseModel):
     """Request for bulk remediation actions on multiple files."""
 
     action_type: str = Field(
-        ..., description="Action type: quarantine, lockdown, or label_apply"
+        ..., max_length=50, description="Action type: quarantine, lockdown, or label_apply"
     )
     items: list[BulkRemediationItem] = Field(
         ..., description="List of files to remediate", min_length=1, max_length=100
     )
     # Quarantine-specific
     quarantine_dir: str | None = Field(
-        None, description="Custom quarantine directory (quarantine only)"
+        None, max_length=4096, description="Custom quarantine directory (quarantine only)"
     )
     # Lockdown-specific
     allowed_principals: list[str] | None = Field(
-        None, description="Allowed principals (lockdown only)"
+        None, max_length=100, description="Allowed principals (lockdown only)"
     )
     # Label-specific
     label_id: str | None = Field(
-        None, description="Sensitivity label ID (label_apply only)"
+        None, max_length=255, description="Sensitivity label ID (label_apply only)"
     )
     dry_run: bool = Field(
         False, description="Preview actions without executing"

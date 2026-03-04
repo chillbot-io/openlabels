@@ -19,7 +19,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -61,9 +61,9 @@ class LabelResponse(BaseModel):
 class LabelRuleCreate(BaseModel):
     """Request to create a label rule."""
 
-    rule_type: str  # 'risk_tier' | 'entity_type'
-    match_value: str  # 'CRITICAL' | 'SSN'
-    label_id: str
+    rule_type: str = Field(..., max_length=50)  # 'risk_tier' | 'entity_type'
+    match_value: str = Field(..., max_length=255)  # 'CRITICAL' | 'SSN'
+    label_id: str = Field(..., max_length=255)
     priority: int = 0
 
 
@@ -84,7 +84,7 @@ class ApplyLabelRequest(BaseModel):
     """Request to apply a label to a file."""
 
     result_id: UUID
-    label_id: str
+    label_id: str = Field(..., max_length=255)
 
 
 class BulkApplyRequest(BaseModel):
@@ -103,10 +103,10 @@ class LabelSyncRequest(BaseModel):
 class LabelMappingsRequest(BaseModel):
     """Request to update label mappings for risk tiers."""
 
-    CRITICAL: str | None = None
-    HIGH: str | None = None
-    MEDIUM: str | None = None
-    LOW: str | None = None
+    CRITICAL: str | None = Field(None, max_length=255)
+    HIGH: str | None = Field(None, max_length=255)
+    MEDIUM: str | None = Field(None, max_length=255)
+    LOW: str | None = Field(None, max_length=255)
 
 
 class LabelMappingsResponse(BaseModel):

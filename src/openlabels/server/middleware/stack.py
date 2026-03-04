@@ -29,6 +29,10 @@ logger = logging.getLogger(__name__)
 _CallNext = Callable[[Request], Coroutine[Any, Any, Response]]
 
 
+class _RequestTooLarge(Exception):
+    """Raised when a chunked request body exceeds the configured size limit."""
+
+
 # Standalone middleware functions (importable for unit testing)
 async def add_request_id(request: Request, call_next: _CallNext) -> Response:
     """Attach a correlation ID to every request/response."""
@@ -140,7 +144,8 @@ async def limit_request_size(request: Request, call_next: _CallNext) -> Response
     # require a Content-Length header on body-carrying methods to prevent
     # bypassing the size limit via chunked transfer encoding.
     # File upload paths are exempt since multipart uploads legitimately
-    # use chunked encoding.
+    # use chunked encoding, but we still enforce the size limit by
+    # wrapping the receive channel to track accumulated bytes (M-29).
     if parsed_length is None and request.method in ("POST", "PUT", "PATCH"):
         transfer_encoding = request.headers.get("transfer-encoding", "")
         if "chunked" in transfer_encoding.lower():
@@ -156,8 +161,35 @@ async def limit_request_size(request: Request, call_next: _CallNext) -> Response
                 if request_id:
                     body["request_id"] = request_id
                 return JSONResponse(status_code=411, content=body)
+            else:
+                # SECURITY (M-29): Even for upload paths, enforce the size
+                # limit by tracking accumulated bytes on the receive channel.
+                bytes_received = 0
+                original_receive = request.receive
 
-    return await call_next(request)
+                async def _size_limited_receive() -> dict:
+                    nonlocal bytes_received
+                    message = await original_receive()
+                    chunk = message.get("body", b"")
+                    bytes_received += len(chunk)
+                    if bytes_received > max_size:
+                        raise _RequestTooLarge()
+                    return message
+
+                request._receive = _size_limited_receive
+
+    try:
+        return await call_next(request)
+    except _RequestTooLarge:
+        request_id = get_request_id()
+        body_resp: dict[str, Any] = {
+            "error": "REQUEST_TOO_LARGE",
+            "message": f"Request body exceeds {settings.security.max_request_size_mb}MB limit",
+            "details": {"max_size_mb": settings.security.max_request_size_mb},
+        }
+        if request_id:
+            body_resp["request_id"] = request_id
+        return JSONResponse(status_code=413, content=body_resp)
 
 
 async def add_security_headers(request: Request, call_next: _CallNext) -> Response:
@@ -178,15 +210,18 @@ async def add_security_headers(request: Request, call_next: _CallNext) -> Respon
     # SECURITY: Prevent browser/proxy caching of sensitive API responses (PII exports, etc.)
     response.headers["Cache-Control"] = "no-store"
 
-    # NOTE: 'unsafe-inline' for styles is required by HTMX/Tailwind inline styles.
-    # Migrate to nonce-based CSP when feasible to eliminate this exception.
+    # TODO(M-47): 'unsafe-inline' for style-src weakens XSS protection.
+    # It is currently required because HTMX and Tailwind inject inline
+    # styles at runtime.  Replace with nonce-based or hash-based CSP for
+    # styles once inline style usage is eliminated or a nonce injection
+    # middleware is added.
     csp_directives = [
         "default-src 'self'",
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: https:",
         "font-src 'self'",
-        "connect-src 'self' wss: ws:",
+        "connect-src 'self' wss:",
         "frame-ancestors 'self'",
         "form-action 'self'",
         "base-uri 'self'",

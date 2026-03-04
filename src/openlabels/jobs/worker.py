@@ -759,32 +759,32 @@ class Worker:
         except JobError as e:
             # Domain-specific job error - log with full context
             logger.error(f"Job {job.id} ({job.task_type}) failed: {e}")
-            await self._safe_fail(queue, job.id, str(e))
+            await self._safe_fail(queue, job.id, f"{job.task_type} task failed")
         except SQLAlchemyError as e:
             # Database error during job execution
             error_msg = f"Database error during {job.task_type} task: {type(e).__name__}: {e}"
             logger.error(f"Job {job.id} failed with database error: {error_msg}")
-            await self._safe_fail(queue, job.id, error_msg)
+            await self._safe_fail(queue, job.id, f"Database error during {job.task_type} task")
         except PermissionError as e:
             # File/resource permission issue
             error_msg = f"Permission denied during {job.task_type} task: {e}"
             logger.error(f"Job {job.id} failed with permission error: {error_msg}")
-            await self._safe_fail(queue, job.id, error_msg)
+            await self._safe_fail(queue, job.id, f"Permission denied during {job.task_type} task")
         except FileNotFoundError as e:
             # Missing file/resource
             error_msg = f"File not found during {job.task_type} task: {e}"
             logger.error(f"Job {job.id} failed - file not found: {error_msg}")
-            await self._safe_fail(queue, job.id, error_msg)
+            await self._safe_fail(queue, job.id, f"File not found during {job.task_type} task")
         except OSError as e:
             # General OS/IO error
             error_msg = f"OS error during {job.task_type} task: {type(e).__name__}: {e}"
             logger.error(f"Job {job.id} failed with OS error: {error_msg}")
-            await self._safe_fail(queue, job.id, error_msg)
+            await self._safe_fail(queue, job.id, f"OS error during {job.task_type} task")
         except ValueError as e:
             # Invalid input/data
             error_msg = f"Invalid data in {job.task_type} task: {e}"
             logger.error(f"Job {job.id} failed with value error: {error_msg}")
-            await self._safe_fail(queue, job.id, error_msg)
+            await self._safe_fail(queue, job.id, f"Invalid data in {job.task_type} task")
         except asyncio.CancelledError:
             # Task cancelled - re-raise to allow graceful shutdown
             logger.warning(f"Job {job.id} cancelled during execution")
@@ -794,12 +794,12 @@ class Worker:
             # Catch-all for runtime issues
             error_msg = f"Runtime error in {job.task_type} task: {type(e).__name__}: {e}"
             logger.error(f"Job {job.id} failed with runtime error: {error_msg}")
-            await self._safe_fail(queue, job.id, error_msg)
+            await self._safe_fail(queue, job.id, f"Runtime error in {job.task_type} task")
         except Exception as e:
             # Catch-all for any other unexpected exception types
             error_msg = f"Unexpected error in {job.task_type} task: {type(e).__name__}: {e}"
             logger.error(f"Job {job.id} failed with unexpected error: {error_msg}", exc_info=True)
-            await self._safe_fail(queue, job.id, error_msg)
+            await self._safe_fail(queue, job.id, f"Unexpected error in {job.task_type} task")
 
     @staticmethod
     async def _safe_fail(queue: JobQueue, job_id, error_msg: str) -> None:

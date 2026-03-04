@@ -224,7 +224,10 @@ async def get_subscription_status(
         # Parse key fields from wecutil XML output using proper XML parser
         output = proc.stdout
         try:
-            import defusedxml.ElementTree as ET
+            try:
+                import defusedxml.ElementTree as ET
+            except ImportError:
+                import xml.etree.ElementTree as ET  # noqa: S405
 
             root = ET.fromstring(output)
             # Handle namespaced and non-namespaced XML
