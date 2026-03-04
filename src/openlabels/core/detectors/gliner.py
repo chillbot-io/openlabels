@@ -171,8 +171,8 @@ class GLiNERDetector(BaseDetector):
                     cache_dir = Path(snapshot_download(
                         self.model_name, local_files_only=True,
                     ))
-                except Exception:
-                    pass
+                except (FileNotFoundError, ConnectionError, RuntimeError, ImportError) as e:
+                    logger.debug("Failed to locate cached GLiNER model %s: %s", self.model_name, e)
 
             if cache_dir and cache_dir.exists():
                 integrity_ok = verify_model_integrity(
@@ -302,7 +302,10 @@ class GLiNERDetector(BaseDetector):
                     return 4.0
 
             return len(sample) / n_tokens
-        except Exception:
+        except AttributeError:
+            return 4.0
+        except (TypeError, ValueError, RuntimeError) as e:
+            logger.debug("GLiNER tokenization estimation failed: %s", e)
             return 4.0
 
     def _compute_chunk_params(self, text: str) -> tuple[int, int]:
@@ -362,7 +365,7 @@ class GLiNERDetector(BaseDetector):
                 profile.categories,
             )
             return profile.selected_labels
-        except Exception as e:
+        except (ImportError, ValueError, TypeError, RuntimeError) as e:
             logger.warning("Label selection failed, using all labels: %s", e)
             return self._entity_labels
 

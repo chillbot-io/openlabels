@@ -402,8 +402,8 @@ async def execute_scan_task(
             # (On fallback to the pipeline below, the pipeline's own finally handles this.)
             try:
                 await adapter.__aexit__(None, None, None)
-            except (ConnectionError, OSError, RuntimeError):
-                pass
+            except (ConnectionError, OSError, RuntimeError) as e:
+                logger.debug("Adapter exit error (non-fatal): %s", e)
             cleanup_processor()
             return result
         except (ImportError, RuntimeError, OSError) as agent_err:
@@ -669,8 +669,8 @@ async def execute_scan_task(
                             "reason": "User cancelled",
                         },
                     )
-                except (ConnectionError, OSError):
-                    pass
+                except (ConnectionError, OSError) as e:
+                    logger.debug("Failed to send cancellation notification: %s", e)
             return stats
 
         # Update folder inventory

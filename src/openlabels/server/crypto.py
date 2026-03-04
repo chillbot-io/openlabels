@@ -184,14 +184,18 @@ def decrypt_config_credentials(config: dict[str, Any]) -> dict[str, Any]:
         if is_encrypted(value):
             try:
                 result[key] = decrypt_value(value)
-            except (InvalidToken, Exception) as exc:
+            except InvalidToken:
                 logger.warning(
-                    "Failed to decrypt config field '%s': %s",
+                    "Failed to decrypt config field '%s': invalid token (corrupted or wrong key)",
+                    key,
+                )
+                result[key] = value
+            except Exception as exc:
+                logger.warning(
+                    "Unexpected error decrypting config field '%s': %s",
                     key,
                     type(exc).__name__,
                 )
-                # Return the raw token so the caller can decide how to handle it.
-                # This is safer than silently dropping the value.
                 result[key] = value
         else:
             result[key] = value

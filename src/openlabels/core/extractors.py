@@ -23,7 +23,7 @@ try:
     from PIL import Image as _Image
     _Image.MAX_IMAGE_PIXELS = 25_000_000
 except ImportError:
-    pass  # PIL not installed — image extraction will fail gracefully later
+    pass  # PIL not installed — image extraction uses graceful fallback
 
 from .constants import (
     MAX_DECOMPRESSED_SIZE,
@@ -898,8 +898,7 @@ class EmailExtractor(BaseExtractor):
                 pages=1,
             )
 
-        except Exception as e:
-            # Log MSG file extraction failures
+        except (OSError, ValueError, KeyError, UnicodeDecodeError) as e:
             logger.info(f"MSG extraction failed for {filename}: {type(e).__name__}: {e}")
             return ExtractionResult(
                 text="",

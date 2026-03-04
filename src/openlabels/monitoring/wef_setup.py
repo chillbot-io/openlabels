@@ -304,7 +304,10 @@ async def list_subscriptions() -> list[str]:
         if proc.returncode != 0:
             return []
         return [s.strip() for s in proc.stdout.strip().splitlines() if s.strip()]
-    except (FileNotFoundError, Exception):
+    except FileNotFoundError:
+        return []
+    except Exception as e:
+        logger.warning("Failed to list WEF subscriptions: %s", e)
         return []
 
 
