@@ -897,6 +897,25 @@ class Settings(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def validate_production_cors_origins(self) -> Settings:
+        """Reject localhost-only CORS origins in production/staging with credentials."""
+        if self.server.environment not in ("production", "staging"):
+            return self
+        if not self.cors.allow_credentials:
+            return self
+        non_local = [
+            o for o in self.cors.allowed_origins
+            if "localhost" not in o and "127.0.0.1" not in o
+        ]
+        if not non_local and self.cors.allowed_origins:
+            raise ValueError(
+                "CORS allowed_origins contains only localhost origins in "
+                f"{self.server.environment} with allow_credentials=True. "
+                "Configure real origin URLs or set allow_credentials=False."
+            )
+        return self
+
 
 class ReportingSettings(BaseSettings):
     """Reporting and distribution configuration (Phase M).

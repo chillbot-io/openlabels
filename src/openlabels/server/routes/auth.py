@@ -55,15 +55,25 @@ _DEV_USERNAME = os.environ.get("OPENLABELS_DEV_USERNAME", "admin")
 _DEV_PASSWORD = os.environ.get("OPENLABELS_DEV_PASSWORD")
 if _DEV_PASSWORD is None:
     _DEV_PASSWORD = secrets.token_urlsafe(16)
-    # SECURITY: Never log credentials through the logging framework — they persist
-    # in log aggregation systems.  Print to stderr only so it's visible at startup
-    # but not captured by structured logging pipelines.
+    # Write the generated password to a file only the current user can read,
+    # instead of printing to stderr where it may be captured by log aggregators.
     import sys as _sys
 
-    print(  # noqa: T201
-        f"DEV MODE: Generated random dev password: {_DEV_PASSWORD}",
-        file=_sys.stderr,
-    )
+    try:
+        import stat
+        _pw_path = "/tmp/.openlabels_dev_password"  # noqa: S108
+        with open(_pw_path, "w") as _f:
+            _f.write(_DEV_PASSWORD)
+        os.chmod(_pw_path, stat.S_IRUSR | stat.S_IWUSR)
+        print(  # noqa: T201
+            f"DEV MODE: Generated random dev password written to {_pw_path}",
+            file=_sys.stderr,
+        )
+    except OSError:
+        print(  # noqa: T201
+            "DEV MODE: Generated random dev password (set OPENLABELS_DEV_PASSWORD to use a fixed one)",
+            file=_sys.stderr,
+        )
 
 
 def _get_request_context(request: Request) -> dict:

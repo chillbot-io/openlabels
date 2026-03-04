@@ -16,7 +16,6 @@ Usage:
 
 from __future__ import annotations
 
-import ast
 import gzip
 import json
 import logging
@@ -334,11 +333,7 @@ def _parse_pii_spans(
         try:
             spans = json.loads(spans_raw)
         except json.JSONDecodeError:
-            # Fallback for Python-formatted strings (single quotes, etc.)
-            try:
-                spans = ast.literal_eval(spans_raw)
-            except (ValueError, SyntaxError):
-                return []
+            return []
     elif isinstance(spans_raw, list):
         spans = spans_raw
     else:
@@ -507,10 +502,7 @@ def load_gretel_pii(
                 try:
                     entities_raw = json.loads(entities_raw)
                 except json.JSONDecodeError:
-                    try:
-                        entities_raw = ast.literal_eval(entities_raw)
-                    except (ValueError, SyntaxError):
-                        entities_raw = []
+                    entities_raw = []
 
             gold_spans = _resolve_entity_positions(
                 text, entities_raw, GRETEL_PII_TO_OPENLABELS
@@ -791,12 +783,6 @@ def _coerce_spans_to_list(spans_raw: object) -> list[dict]:
             if isinstance(parsed, list):
                 return parsed
         except (json.JSONDecodeError, ValueError):
-            pass
-        try:
-            parsed = ast.literal_eval(spans_raw)
-            if isinstance(parsed, list):
-                return parsed
-        except (ValueError, SyntaxError):
             pass
     return []
 

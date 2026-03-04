@@ -155,16 +155,14 @@ def _register_root_endpoints(app: FastAPI) -> None:
     async def metrics(request: Request) -> Response:
         from openlabels.server.config import get_settings
         _settings = get_settings()
-        # S13: Bearer token authentication for metrics endpoint
+        # S13: Bearer token authentication for metrics endpoint.
+        # In production/staging, a metrics token MUST be configured.
         metrics_token = os.environ.get("OPENLABELS_METRICS_TOKEN")
+        if _settings.server.environment in ("production", "staging") and not metrics_token:
+            return JSONResponse(status_code=403, content={"error": "OPENLABELS_METRICS_TOKEN not configured"})
         if metrics_token:
             auth_header = request.headers.get("Authorization", "")
             if auth_header != f"Bearer {metrics_token}":
-                return JSONResponse(status_code=403, content={"error": "FORBIDDEN"})
-        # In production/staging, also enforce IP allowlist (behind reverse proxy)
-        if _settings.server.environment in ("production", "staging"):
-            client_host = request.client.host if request.client else ""
-            if client_host not in ("127.0.0.1", "::1", "localhost"):
                 return JSONResponse(status_code=403, content={"error": "FORBIDDEN"})
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 

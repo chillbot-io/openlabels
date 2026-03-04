@@ -271,26 +271,35 @@ Benchmark results file should likely be in `.gitignore` if auto-generated.
 
 ---
 
-## Priority Action Items
+## Resolution Status
 
-### Immediate (This Week)
-1. Parameterize SQL LIMIT clauses (`query.py:535, 621, 745`)
-2. Remove dev password printing from stderr (`auth.py:54-66`)
-3. Enforce session encryption key at startup (`session.py` / `lifespan.py`)
-4. Replace `ast.literal_eval` fallback with JSON-only (`adapters.py`)
-5. Fix OData injection — switch to allowlist (`graph.py:56-98`)
+### Already Addressed (False Positives from Audit)
 
-### Next Sprint
-6. Add Azure AD nonce validation
-7. Reject localhost CORS origins in production
-8. Fix `/metrics` auth (require token, no IP-only fallback)
-9. Validate SMB username input
-10. Enforce DB SSL in production at startup
+The following were flagged by the audit agents but the code **already had mitigations**:
 
-### Backlog
-11. Split god files (start with `models.py`, `auth.py`, `monitoring.py`)
-12. Replace broad `except Exception` with specific types
-13. Centralize `os.environ` access through Pydantic config
-14. Audit and remove dead code functions
-15. Remove obvious comments
-16. Add auth failure rate limiting
+| Issue | Status | Evidence |
+|-------|--------|----------|
+| S1. SQL LIMIT injection | **Already safe** | Uses `LIMIT ?` parameterized placeholder, not f-string interpolation |
+| S3. Session encryption | **Already enforced** | `lifespan.py:29-38` fails fast in production/staging |
+| H1. Azure AD nonce | **Already validated** | `auth.py:606-618` uses `hmac.compare_digest` |
+| H2. Session fixation | **Already handled** | Old session deleted + new created in same transaction, committed before response |
+| H6. SMB username | **Already validated** | `enumerate.py:51,163` uses `_USERNAME_RE` allowlist regex |
+| H7. DB SSL enforcement | **Already enforced** | `config.py:888-897` `validate_production_db_ssl` validator |
+
+### Fixed in This Commit
+
+| Issue | Fix |
+|-------|-----|
+| S2. Dev password on stderr | Password written to `/tmp/.openlabels_dev_password` (mode 0600) instead of stderr |
+| S4. OData injection | Switched from blocklist regex to allowlist: `^[a-zA-Z0-9\s\-_.@\\]+$` after NFC normalization |
+| H3. CORS localhost in prod | Added `validate_production_cors_origins` validator — rejects localhost-only origins with credentials in production/staging |
+| H4. Metrics auth | Token now required in production/staging — returns 403 if `OPENLABELS_METRICS_TOKEN` is not set |
+| H5. `ast.literal_eval` | Removed all 3 fallbacks in `adapters.py` — JSON-only parsing now |
+
+### Remaining Backlog (Code Quality)
+1. Split god files (start with `models.py`, `auth.py`, `monitoring.py`)
+2. Replace broad `except Exception` with specific types
+3. Centralize `os.environ` access through Pydantic config
+4. Audit and remove dead code functions
+5. Remove obvious comments
+6. Add auth failure rate limiting
