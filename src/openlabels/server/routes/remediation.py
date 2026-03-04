@@ -146,7 +146,7 @@ class LockdownRequest(BaseModel):
 
     file_path: str = Field(..., max_length=4096, description="Path to file to lock down")
     allowed_principals: list[str] = Field(
-        ..., description="List of users/groups allowed access (e.g., ['DOMAIN\\\\Admin'])"
+        ..., max_length=100, description="List of users/groups allowed access (e.g., ['DOMAIN\\\\Admin'])"
     )
     dry_run: bool = Field(
         False, description="Preview action without executing"
@@ -193,7 +193,7 @@ class BulkRemediationRequest(BaseModel):
     )
     # Lockdown-specific
     allowed_principals: list[str] | None = Field(
-        None, description="Allowed principals (lockdown only)"
+        None, max_length=100, description="Allowed principals (lockdown only)"
     )
     # Label-specific
     label_id: str | None = Field(

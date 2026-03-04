@@ -221,7 +221,7 @@ async def add_security_headers(request: Request, call_next: _CallNext) -> Respon
         "style-src 'self' 'unsafe-inline'",
         "img-src 'self' data: https:",
         "font-src 'self'",
-        "connect-src 'self'",
+        "connect-src 'self' wss:",
         "frame-ancestors 'self'",
         "form-action 'self'",
         "base-uri 'self'",

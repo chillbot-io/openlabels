@@ -97,7 +97,8 @@ def _is_admin_allowed(email: str, has_idp_admin: bool) -> bool:
         )
         return True
 
-    return email in admin_emails
+    # Email addresses are case-insensitive per RFC 5321
+    return email.lower() in (e.lower() for e in admin_emails)
 
 
 async def get_or_create_user(

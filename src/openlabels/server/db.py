@@ -178,8 +178,12 @@ async def set_rls_tenant_id(session: AsyncSession, tenant_id: UUID) -> None:
     # SET LOCAL is transaction-scoped: the value is automatically discarded
     # at COMMIT/ROLLBACK, so there is no risk of leaking to the next user
     # of this pooled connection.
+    # Use set_config() instead of SET LOCAL because asyncpg's extended
+    # query protocol does not support parameter binding in SET statements.
+    # set_config(name, value, is_local=true) is functionally equivalent
+    # to SET LOCAL and supports $1/$2 bind parameters.
     await session.execute(
-        text("SET LOCAL app.current_tenant_id = :tid"),
+        text("SELECT set_config('app.current_tenant_id', :tid, true)"),
         {"tid": str(tenant_id)},
     )
 
@@ -197,7 +201,7 @@ async def set_rls_user_id(session: AsyncSession, user_id: UUID) -> None:
         user_id: The UUID of the current user.
     """
     await session.execute(
-        text("SET LOCAL app.current_user_id = :uid"),
+        text("SELECT set_config('app.current_user_id', :uid, true)"),
         {"uid": str(user_id)},
     )
 

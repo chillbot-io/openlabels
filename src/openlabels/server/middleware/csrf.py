@@ -64,8 +64,14 @@ def _normalize_path(path: str) -> str:
 
 
 def _session_binding(session_id: str) -> str:
-    """Derive a short binding hash from a session ID."""
-    return hashlib.sha256(session_id.encode()).hexdigest()[:16]
+    """Derive a short HMAC binding from a session ID.
+
+    Uses the server secret key so that an attacker who learns the session ID
+    cannot independently compute the binding and forge a CSRF token.
+    """
+    settings = get_settings()
+    key = settings.server.secret_key.get_secret_value().encode() or b"openlabels-csrf-fallback"
+    return hmac.new(key, session_id.encode(), hashlib.sha256).hexdigest()[:16]
 
 
 def generate_csrf_token(session_id: str | None = None) -> str:

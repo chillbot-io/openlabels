@@ -108,7 +108,7 @@ def _safe_json(resp: Any) -> dict:
 
 class EnumerateRequest(BaseModel):
     """Request to enumerate available resources on a source."""
-    source_type: str = Field(..., description="Source type to enumerate")
+    source_type: str = Field(..., max_length=50, description="Source type to enumerate")
     credentials: dict[str, Any] | None = Field(
         None,
         description="Inline credentials (used if not previously saved). "
@@ -116,6 +116,7 @@ class EnumerateRequest(BaseModel):
     )
     search: str | None = Field(
         None,
+        max_length=500,
         description="Search query to filter resources (server-side for SharePoint/OneDrive).",
     )
     page: int = Field(1, ge=1, description="Page number (1-indexed)")

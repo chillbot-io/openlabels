@@ -43,7 +43,7 @@ def _safe_content_disposition(filename: str) -> str:
     Strips control characters and uses RFC 5987 encoding for the filename.
     """
     # Remove any control characters (including CR, LF) and path separators
-    sanitized = re.sub(r'[\x00-\x1f\x7f/\\]', '_', filename)
+    sanitized = re.sub(r'[\x00-\x1f\x7f/\\"]', '_', filename)
     # RFC 5987 encoded filename for broad browser support
     encoded = quote(sanitized, safe='')
     return f"attachment; filename=\"{sanitized}\"; filename*=UTF-8''{encoded}"
