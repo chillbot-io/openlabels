@@ -63,8 +63,15 @@ class DuckDBEngine:
 
     @staticmethod
     def _esc(value: str) -> str:
-        """Escape a value for use in a DuckDB SET statement."""
-        return value.replace("'", "''")
+        """Escape a value for use in a DuckDB SET statement.
+
+        Replaces backslashes first (to prevent escape-sequence attacks),
+        then doubles single quotes.  Also rejects semicolons and null
+        bytes to prevent statement injection via DuckDB's parser.
+        """
+        if "\x00" in value or ";" in value:
+            raise ValueError(f"Illegal character in DuckDB SET value: {value!r}")
+        return value.replace("\\", "\\\\").replace("'", "''")
 
     def _configure_remote_storage(self, config) -> None:
         """Install and configure DuckDB extensions for S3/Azure backends."""

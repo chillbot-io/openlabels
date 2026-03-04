@@ -125,7 +125,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 
         # Skip CSRF validation for dev mode, but still set the cookie
         # so the frontend can read it (apiFetch requires it for POST/PUT/DELETE).
-        if settings.auth.provider == "none" and settings.server.environment == "development":
+        if (settings.auth.provider == "none"
+                and settings.server.debug
+                and settings.server.host in ("127.0.0.1", "localhost", "::1")):
             response = await call_next(request)
             if request.method == "GET" and CSRF_COOKIE_NAME not in request.cookies:
                 self._set_csrf_cookie(request, response)

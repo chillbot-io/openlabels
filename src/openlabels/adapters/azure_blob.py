@@ -100,7 +100,10 @@ class AzureBlobAdapter:
         exc_tb: TracebackType | None,
     ) -> None:
         if self._client:
-            await asyncio.to_thread(self._client.close)
+            try:
+                await asyncio.to_thread(self._client.close)
+            except Exception as e:
+                logger.debug("Azure BlobServiceClient close error (non-fatal): %s", e)
         self._client = None
         self._container_client = None
 

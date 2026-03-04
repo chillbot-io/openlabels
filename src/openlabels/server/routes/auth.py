@@ -717,6 +717,19 @@ async def _callback_oidc(
         # Some providers don't return id_token in the code exchange —
         # fall back to userinfo endpoint
         raw_claims = await _fetch_userinfo(discovery, token_result["access_token"])
+        # SECURITY: Validate nonce even on userinfo fallback path to prevent
+        # authorization code replay attacks.
+        claim_nonce = raw_claims.get("nonce", "")
+        if nonce and claim_nonce and not hmac.compare_digest(claim_nonce, nonce):
+            log_security_event(
+                event_type="oidc_nonce_mismatch",
+                details=_get_request_context(request),
+                level="warning",
+            )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Authentication failed: nonce mismatch (possible replay attack).",
+            )
 
     normalized = extract_claims(raw_claims, oidc_config)
 
@@ -816,7 +829,7 @@ async def dev_login(
     if not settings.server.debug:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dev login requires DEBUG=true")
 
-    if body.username != _DEV_USERNAME or body.password != _DEV_PASSWORD:
+    if not hmac.compare_digest(body.username, _DEV_USERNAME) or not hmac.compare_digest(body.password, _DEV_PASSWORD):
         log_security_event(
             event_type="dev_login_failed",
             details={**_get_request_context(request), "username": body.username},

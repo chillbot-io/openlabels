@@ -409,7 +409,9 @@ async def authenticate_websocket(
     # that was created by the auth bootstrapper at startup — do NOT
     # auto-create users or bypass authentication entirely.
     # SECURITY: Only allow auth bypass in development environment
-    if settings.auth.provider == "none" and settings.server.environment == "development":
+    if (settings.auth.provider == "none"
+            and settings.server.debug
+            and settings.server.host in ("127.0.0.1", "localhost", "::1")):
         async with get_session_factory()() as session:
             tenant_query = select(Tenant).where(
                 (Tenant.idp_tenant_id == "dev-tenant") | (Tenant.azure_tenant_id == "dev-tenant")

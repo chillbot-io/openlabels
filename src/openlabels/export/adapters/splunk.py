@@ -58,16 +58,20 @@ class SplunkAdapter:
             chunk = records[offset : offset + self._batch_size]
             payload = "\n".join(self._format_event(r) for r in chunk)
 
-            async with httpx.AsyncClient(verify=self._verify_ssl) as client:
-                resp = await client.post(
-                    f"{self._url}/services/collector/event",
-                    content=payload,
-                    headers={
-                        "Authorization": f"Splunk {self._token}",
-                        "Content-Type": "application/json",
-                    },
-                    timeout=30.0,
-                )
+            try:
+                async with httpx.AsyncClient(verify=self._verify_ssl) as client:
+                    resp = await client.post(
+                        f"{self._url}/services/collector/event",
+                        content=payload,
+                        headers={
+                            "Authorization": f"Splunk {self._token}",
+                            "Content-Type": "application/json",
+                        },
+                        timeout=30.0,
+                    )
+            except (httpx.HTTPError, OSError, ConnectionError) as e:
+                logger.error("Splunk HEC request failed: %s", e)
+                break
 
             if resp.status_code == 200:
                 total_sent += len(chunk)

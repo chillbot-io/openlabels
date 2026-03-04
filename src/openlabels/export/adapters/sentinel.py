@@ -103,10 +103,14 @@ class SentinelAdapter:
             "time-generated-field": "TimeGenerated",
         }
 
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                self._url, content=body, headers=headers, timeout=30.0,
-            )
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(
+                    self._url, content=body, headers=headers, timeout=30.0,
+                )
+        except (httpx.HTTPError, OSError, ConnectionError) as e:
+            logger.error("Sentinel request failed: %s", e)
+            return 0
 
         if resp.status_code in (200, 202):
             return len(records)
