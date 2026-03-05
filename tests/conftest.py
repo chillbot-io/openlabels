@@ -233,9 +233,9 @@ def sample_ssns():
     """Sample valid and invalid SSNs for testing."""
     return {
         "valid": [
-            "123-45-6789",
-            "078-05-1120",
-            "219-09-9999",
+            "555-12-3456",
+            "001-01-0001",
+            "765-43-2100",
         ],
         "invalid": [
             "000-00-0000",  # All zeros
@@ -408,8 +408,10 @@ def database_url():
     return auto_url
 
 
-# Track whether tables have been created in the test database
-_tables_initialized = False
+# Track whether tables have been created in the test database.
+# Use a mutable container instead of a bare global to avoid issues with
+# module-level booleans and parallel test workers (xdist).
+_init_state: dict[str, bool] = {"tables_initialized": False}
 
 
 @pytest.fixture
@@ -430,8 +432,6 @@ async def test_db(database_url):
 
     from openlabels.server.models import Base
 
-    global _tables_initialized
-
     engine = create_async_engine(
         database_url,
         echo=False,
@@ -441,7 +441,7 @@ async def test_db(database_url):
     )
 
     try:
-        if not _tables_initialized:
+        if not _init_state["tables_initialized"]:
             # First test: drop and recreate schema for clean slate
             # Terminate stale connections first to avoid DROP SCHEMA
             # hanging on lock contention from killed test runs
@@ -471,7 +471,7 @@ async def test_db(database_url):
                     for table in Base.metadata.sorted_tables:
                         if table.name in _partitioned_tables:
                             table.dialect_options["postgresql"]["partition_by"] = _partitioned_tables[table.name]
-            _tables_initialized = True
+            _init_state["tables_initialized"] = True
         else:
             # Subsequent tests: truncate all tables (fast, no DDL,
             # avoids asyncpg statement cache invalidation issues)
@@ -511,6 +511,110 @@ async def test_db(database_url):
             yield session
     finally:
         await engine.dispose()
+
+
+from contextlib import contextmanager
+
+
+def _get_all_limiters():
+    """Collect all rate limiters from the application modules."""
+    from openlabels.server.app import limiter as app_limiter
+    from openlabels.server.routes.auth import limiter as auth_limiter
+    from openlabels.server.routes.remediation import limiter as remediation_limiter
+    from openlabels.server.routes.scans import limiter as scans_limiter
+
+    return [app_limiter, remediation_limiter, scans_limiter, auth_limiter]
+
+
+@contextmanager
+def disable_rate_limiters():
+    """Context manager to disable all rate limiters and restore them on exit.
+
+    Usage::
+
+        with disable_rate_limiters():
+            async with AsyncClient(...) as client:
+                ...
+    """
+    limiters = _get_all_limiters()
+    original_states = [lim.enabled for lim in limiters]
+    for lim in limiters:
+        lim.enabled = False
+    try:
+        yield limiters
+    finally:
+        for lim, state in zip(limiters, original_states, strict=False):
+            lim.enabled = state
+
+
+class ModelFactory:
+    """Factory for creating test model instances with unique, randomized data.
+
+    Prevents collisions in parallel test runs by generating unique suffixes
+    for each entity created.
+    """
+
+    def __init__(self, session):
+        self._session = session
+        self._counter = 0
+
+    def _suffix(self) -> str:
+        import random
+        import string
+        self._counter += 1
+        return ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+
+    async def create_tenant(self, **overrides):
+        from openlabels.server.models import Tenant
+        suffix = self._suffix()
+        kwargs = {
+            "name": f"Test Tenant {suffix}",
+            "azure_tenant_id": f"test-tenant-id-{suffix}",
+        }
+        kwargs.update(overrides)
+        tenant = Tenant(**kwargs)
+        self._session.add(tenant)
+        await self._session.flush()
+        await self._session.refresh(tenant)
+        return tenant
+
+    async def create_user(self, tenant, *, role="admin", **overrides):
+        from openlabels.server.models import User
+        suffix = self._suffix()
+        kwargs = {
+            "tenant_id": tenant.id,
+            "email": f"test-{suffix}@localhost",
+            "name": f"Test User {suffix}",
+            "role": role,
+        }
+        kwargs.update(overrides)
+        user = User(**kwargs)
+        self._session.add(user)
+        await self._session.flush()
+        await self._session.refresh(user)
+        return user
+
+    async def create_scan_target(self, tenant, **overrides):
+        from openlabels.server.models import ScanTarget
+        suffix = self._suffix()
+        kwargs = {
+            "tenant_id": tenant.id,
+            "name": f"Test Target {suffix}",
+            "source_type": "filesystem",
+            "config": {"path": f"/tmp/test-{suffix}"},
+        }
+        kwargs.update(overrides)
+        target = ScanTarget(**kwargs)
+        self._session.add(target)
+        await self._session.flush()
+        await self._session.refresh(target)
+        return target
+
+
+@pytest.fixture
+def model_factory(test_db):
+    """Fixture providing a ModelFactory for creating test data."""
+    return ModelFactory(test_db)
 
 
 @pytest.fixture
@@ -564,6 +668,10 @@ async def test_client(test_db):
     await test_db.refresh(test_user)
 
     async def override_get_session():
+        # Set RLS context so PostgreSQL row-level security policies are
+        # exercised in tests, matching production behaviour.
+        from openlabels.server.db import set_rls_context
+        await set_rls_context(test_db, test_tenant.id, test_user.id)
         yield test_db
 
     def _create_test_current_user():
@@ -594,33 +702,19 @@ async def test_client(test_db):
     app.dependency_overrides[get_optional_user] = override_get_optional_user
     app.dependency_overrides[require_admin] = override_require_admin
 
-    # Disable rate limiting for tests - collect all limiters from various modules
-    from openlabels.server.app import limiter as app_limiter
-    from openlabels.server.routes.auth import limiter as auth_limiter
-    from openlabels.server.routes.remediation import limiter as remediation_limiter
-    from openlabels.server.routes.scans import limiter as scans_limiter
-
-    limiters = [app_limiter, remediation_limiter, scans_limiter, auth_limiter]
-    original_states = [limiter.enabled for limiter in limiters]
-    for limiter in limiters:
-        limiter.enabled = False
-
     # Patch lifespan-related functions to prevent the app from creating its
     # own DB engine, connecting to Redis, or starting the scheduler during tests.
     # The test_db fixture already provides the DB session.
     from unittest.mock import AsyncMock, MagicMock, patch
     mock_cache = MagicMock()
     mock_cache.is_redis_connected = False
-    with patch("openlabels.server.lifespan.init_db", new_callable=AsyncMock), \
+    with disable_rate_limiters(), \
+         patch("openlabels.server.lifespan.init_db", new_callable=AsyncMock), \
          patch("openlabels.server.lifespan.close_db", new_callable=AsyncMock), \
          patch("openlabels.server.lifespan.get_cache_manager", new_callable=AsyncMock, return_value=mock_cache), \
          patch("openlabels.server.lifespan.close_cache", new_callable=AsyncMock):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://localhost") as client:
             yield client
-
-    # Re-enable rate limiting
-    for limiter, state in zip(limiters, original_states, strict=False):
-        limiter.enabled = state
 
     app.dependency_overrides.clear()

@@ -562,13 +562,15 @@ async def verify_tenant_access(
     Verify that the current user has access to a resource's tenant.
 
     Use this to verify cross-tenant access is not attempted.
+    Returns 404 (not 403) to prevent resource enumeration attacks —
+    cross-tenant resources should be indistinguishable from non-existent ones.
 
     Args:
         tenant: The current tenant context.
         resource_tenant_id: The tenant ID of the resource being accessed.
 
     Raises:
-        HTTPException: 403 if tenants don't match.
+        HTTPException: 404 if tenants don't match.
 
     Example:
         @router.get("/items/{item_id}")
@@ -587,8 +589,8 @@ async def verify_tenant_access(
             f"attempted to access resource in tenant {resource_tenant_id}"
         )
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied to this resource",
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="The requested resource was not found",
         )
 
 

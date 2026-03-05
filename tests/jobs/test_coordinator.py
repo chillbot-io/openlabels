@@ -9,11 +9,6 @@ Tests cover:
 - Edge cases (empty buckets, single prefix, estimation failures)
 """
 
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 

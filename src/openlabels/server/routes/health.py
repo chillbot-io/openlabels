@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import Integer, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import get_current_user, get_optional_user, require_admin
 from openlabels.core.circuit_breaker import CircuitBreaker
+from openlabels.exceptions import BadRequestError, NotFoundError
 from openlabels.core.types import JobStatus
 from openlabels.jobs.queue import JobQueue as JobQueueService
 from openlabels.server.cache import get_cache_stats
@@ -703,7 +704,6 @@ async def get_error_log(
     hours: int = Query(24, ge=1, le=168, description="Hours to look back"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
-    request: Request = None,  # type: ignore[assignment]
     session: AsyncSession = Depends(get_session),
     user=Depends(get_current_user),
 ) -> ErrorLogResponse:
@@ -868,14 +868,12 @@ async def create_system_alert(
 ) -> SystemAlertRule:
     """Create a system alert rule for failure detection."""
     if body.component not in VALID_ALERT_COMPONENTS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid component. Must be one of: {', '.join(sorted(VALID_ALERT_COMPONENTS))}",
+        raise BadRequestError(
+            f"Invalid component. Must be one of: {', '.join(sorted(VALID_ALERT_COMPONENTS))}",
         )
     if body.condition not in VALID_ALERT_CONDITIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid condition. Must be one of: {', '.join(sorted(VALID_ALERT_CONDITIONS))}",
+        raise BadRequestError(
+            f"Invalid condition. Must be one of: {', '.join(sorted(VALID_ALERT_CONDITIONS))}",
         )
 
     from uuid import uuid4
@@ -904,7 +902,7 @@ async def delete_system_alert(
     """Delete a system alert rule."""
     tenant_rules = _system_alert_rules.get(user.tenant_id, {})
     if alert_id not in tenant_rules:
-        raise HTTPException(status_code=404, detail="Alert rule not found")
+        raise NotFoundError("Alert rule not found", resource_type="alert_rule", resource_id=alert_id)
     del tenant_rules[alert_id]
 
 
@@ -917,11 +915,10 @@ async def update_system_alert(
     """Update a system alert rule."""
     tenant_rules = _system_alert_rules.get(user.tenant_id, {})
     if alert_id not in tenant_rules:
-        raise HTTPException(status_code=404, detail="Alert rule not found")
+        raise NotFoundError("Alert rule not found", resource_type="alert_rule", resource_id=alert_id)
     if body.component not in VALID_ALERT_COMPONENTS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid component. Must be one of: {', '.join(sorted(VALID_ALERT_COMPONENTS))}",
+        raise BadRequestError(
+            f"Invalid component. Must be one of: {', '.join(sorted(VALID_ALERT_COMPONENTS))}",
         )
 
     rule = tenant_rules[alert_id]

@@ -229,7 +229,7 @@ class TestCookieSecurityFlags:
                         assert "samesite" in set_cookie.lower(), \
                             f"Session cookie missing SameSite flag: {set_cookie}"
         finally:
-            app.dependency_overrides.pop(get_session, None)
+            app.dependency_overrides.clear()
             app_limiter.enabled = original_app
             auth_limiter.enabled = original_auth
 

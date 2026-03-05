@@ -633,7 +633,9 @@ class FileInventory(Base):
     owner: Mapped[str | None] = mapped_column(String(255))
 
     # Label tracking
-    current_label_id: Mapped[str | None] = mapped_column(String(36))
+    current_label_id: Mapped[str | None] = mapped_column(
+        ForeignKey("sensitivity_labels.id", ondelete="SET NULL"),
+    )
     current_label_name: Mapped[str | None] = mapped_column(String(255))
     label_applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

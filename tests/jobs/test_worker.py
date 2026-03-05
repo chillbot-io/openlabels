@@ -10,11 +10,6 @@ Tests focus on:
 """
 
 import os
-import sys
-
-# Add src to path for direct import
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
