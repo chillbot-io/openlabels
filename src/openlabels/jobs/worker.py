@@ -495,7 +495,9 @@ class Worker:
         """
         from openlabels.server.advisory_lock import AdvisoryLockID, try_advisory_lock
 
-        reclaim_interval = 300  # Check every 5 minutes
+        settings = get_settings()
+        reclaim_interval = settings.timeouts.stuck_job_check
+        stuck_timeout = settings.jobs.stuck_job_timeout
 
         while self.running:
             try:
@@ -513,7 +515,7 @@ class Worker:
                         total_reclaimed = 0
                         for tenant in tenants:
                             queue = JobQueue(session, tenant.id)
-                            reclaimed = await queue.reclaim_stuck_jobs()
+                            reclaimed = await queue.reclaim_stuck_jobs(timeout_seconds=stuck_timeout)
                             total_reclaimed += reclaimed
 
                         if total_reclaimed > 0:

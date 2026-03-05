@@ -640,6 +640,7 @@ async def _callback_azure_ad(
         "refresh_token": result.get("refresh_token"),
         "id_token": result.get("id_token"),
         "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat(),
+        "refresh_token_issued_at": datetime.now(timezone.utc).isoformat(),
         "provider": "azure_ad",
         "claims": id_token_claims,
     }
@@ -758,6 +759,7 @@ async def _callback_oidc(
         "refresh_token": token_result.get("refresh_token"),
         "id_token": id_token,
         "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat(),
+        "refresh_token_issued_at": datetime.now(timezone.utc).isoformat(),
         "provider": "oidc",
         "oidc_provider_key": provider_key,
         "claims": {
@@ -1072,6 +1074,21 @@ async def get_token(
             if expires_at < datetime.now(timezone.utc):
                 refresh_token = session_data.get("refresh_token")
                 if refresh_token:
+                    # Enforce refresh token max lifetime to limit exposure
+                    # window of a compromised token.
+                    max_lifetime_hours = get_settings().auth.refresh_token_max_lifetime_hours
+                    if max_lifetime_hours > 0:
+                        rt_issued = session_data.get("refresh_token_issued_at")
+                        if rt_issued:
+                            issued_at = datetime.fromisoformat(rt_issued)
+                            if datetime.now(timezone.utc) - issued_at > timedelta(hours=max_lifetime_hours):
+                                logger.info("Refresh token exceeded max lifetime, forcing re-login")
+                                await session_store.delete(session_id)
+                                raise HTTPException(
+                                    status_code=status.HTTP_401_UNAUTHORIZED,
+                                    detail="Session expired, please login again",
+                                )
+
                     try:
                         session_provider = session_data.get("provider", "azure_ad")
                         oidc_key = session_data.get("oidc_provider_key")
@@ -1085,6 +1102,8 @@ async def get_token(
                             ).isoformat()
                             if "refresh_token" in result:
                                 session_data["refresh_token"] = result["refresh_token"]
+                                # Reset lifetime when provider rotates the token
+                                session_data["refresh_token_issued_at"] = datetime.now(timezone.utc).isoformat()
 
                             # M-9: Rotate session ID on token refresh to
                             # prevent session fixation attacks. Delete old

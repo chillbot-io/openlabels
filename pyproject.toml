@@ -285,7 +285,7 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "-v --cov=openlabels --cov-report=term-missing"
+addopts = "-v --cov=openlabels --cov-report=term-missing --cov-fail-under=70"
 env = [
     # PostgreSQL test database - set to your local container
     # Default assumes: docker compose -f docker-compose.test.yml up -d
