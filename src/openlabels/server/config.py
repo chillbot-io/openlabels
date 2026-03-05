@@ -362,6 +362,21 @@ class DetectionSettings(BaseSettings):
     agent_pool_enabled: bool = True  # Use multi-process agent pool when ML is enabled
 
 
+class NLQuerySettings(BaseSettings):
+    """Natural-language query (AI) provider keys.
+
+    Used by the /query endpoint to translate natural-language questions
+    into DuckDB SQL.  At least one key must be set for the feature to work.
+
+    Env:
+        OPENLABELS_NL_QUERY__ANTHROPIC_API_KEY=sk-ant-...
+        OPENLABELS_NL_QUERY__OPENAI_API_KEY=sk-...
+    """
+
+    anthropic_api_key: SecretStr | None = None
+    openai_api_key: SecretStr | None = None
+
+
 class LoggingSettings(BaseSettings):
     """Logging configuration."""
 
@@ -442,6 +457,11 @@ class SecuritySettings(BaseSettings):
     """Security middleware configuration."""
 
     max_request_size_mb: int = 50  # Max request body size (aligned with upload limit)
+
+    # Bearer token for the /metrics endpoint.  Required in production/staging
+    # to prevent unauthenticated access to Prometheus metrics.
+    # Env: OPENLABELS_SECURITY__METRICS_TOKEN
+    metrics_token: SecretStr | None = None
 
 
 class TimeoutSettings(BaseSettings):
@@ -881,6 +901,7 @@ class Settings(BaseSettings):
     adapters: AdapterSettings = Field(default_factory=AdapterSettings)
     labeling: LabelingSettings = Field(default_factory=LabelingSettings)
     detection: DetectionSettings = Field(default_factory=DetectionSettings)
+    nl_query: NLQuerySettings = Field(default_factory=NLQuerySettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     cors: CORSSettings = Field(default_factory=CORSSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)

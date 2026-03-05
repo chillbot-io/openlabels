@@ -30,6 +30,7 @@ import hmac
 import logging
 import os
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlparse
 
@@ -833,6 +834,39 @@ async def _fetch_userinfo(discovery: dict, access_token: str) -> dict:
 
 # ---------- Dev Login ----------
 
+# Per-IP auth failure tracking to prevent brute-force attacks.
+# After _MAX_AUTH_FAILURES consecutive failures within the window,
+# the IP is locked out for _AUTH_LOCKOUT_SECONDS.
+_MAX_AUTH_FAILURES = 5
+_AUTH_FAILURE_WINDOW = 300  # 5 minutes
+_AUTH_LOCKOUT_SECONDS = 900  # 15 minutes
+# {ip: [(timestamp, ...), ...]}
+_auth_failures: dict[str, list[float]] = {}
+
+
+def _check_auth_lockout(ip: str) -> None:
+    """Raise 429 if the IP has exceeded the auth failure threshold."""
+    now = time.monotonic()
+    failures = _auth_failures.get(ip, [])
+    # Prune old entries
+    cutoff = now - max(_AUTH_FAILURE_WINDOW, _AUTH_LOCKOUT_SECONDS)
+    failures = [t for t in failures if t > cutoff]
+    _auth_failures[ip] = failures
+
+    # Check if locked out (recent failures within lockout window)
+    recent = [t for t in failures if t > now - _AUTH_LOCKOUT_SECONDS]
+    if len(recent) >= _MAX_AUTH_FAILURES:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed login attempts. Try again later.",
+        )
+
+
+def _record_auth_failure(ip: str) -> None:
+    """Record an auth failure for the given IP."""
+    _auth_failures.setdefault(ip, []).append(time.monotonic())
+
+
 @router.post("/dev-login", response_model=DevLoginResponse)
 @limiter.limit(lambda: get_settings().rate_limit.auth_limit)
 async def dev_login(
@@ -850,7 +884,11 @@ async def dev_login(
     if not settings.server.debug:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dev login requires DEBUG=true")
 
+    client_ip = get_client_ip(request)
+    _check_auth_lockout(client_ip)
+
     if body.username != _DEV_USERNAME or body.password != _DEV_PASSWORD:
+        _record_auth_failure(client_ip)
         log_security_event(
             event_type="dev_login_failed",
             details={**_get_request_context(request), "username": body.username},
