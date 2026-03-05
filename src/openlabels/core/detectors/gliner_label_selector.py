@@ -212,10 +212,6 @@ _DOMAIN_LABELS: dict[EntityDomain, list[str]] = {
     ],
 }
 
-# Minimum label count before we fall back to all labels.
-_MIN_LABELS = 5
-
-
 def profile_content(text: str, sample_size: int = 5000) -> ContentProfile:
     """Profile document content and select GLiNER labels.
 
@@ -261,12 +257,6 @@ def profile_content(text: str, sample_size: int = 5000) -> ContentProfile:
                 if label not in seen:
                     label_list.append(label)
                     seen.add(label)
-
-    # Safety: if too few labels, fall back to all labels
-    if len(label_list) < _MIN_LABELS:
-        from .gliner import GLINER_LABEL_MAP
-
-        label_list = list(GLINER_LABEL_MAP.keys())
 
     return ContentProfile(
         categories=frozenset(active_domains),

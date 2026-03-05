@@ -11,7 +11,6 @@ Tests cover:
 import pytest
 
 from openlabels.core.detectors.gliner_label_selector import (
-    _MIN_LABELS,
     profile_content,
 )
 from openlabels.core.entity_domains import EntityDomain
@@ -172,23 +171,16 @@ class TestLabelSelection:
 
 
 class TestFallbackBehavior:
-    """Test fallback to all labels when too few are selected."""
-
-    def test_minimum_label_count(self):
-        # Any profile should have at least _MIN_LABELS labels
-        text = ""
-        profile = profile_content(text)
-        assert len(profile.selected_labels) >= _MIN_LABELS
+    """Test that base labels are always present even for empty/whitespace text."""
 
     def test_empty_text_gets_base_labels(self):
         profile = profile_content("")
-        # Base labels are always included
-        assert len(profile.selected_labels) >= _MIN_LABELS
+        assert len(profile.selected_labels) >= 14  # base labels count
         assert "person name" in profile.selected_labels
 
     def test_whitespace_text_gets_base_labels(self):
         profile = profile_content("   \n\t  ")
-        assert len(profile.selected_labels) >= _MIN_LABELS
+        assert len(profile.selected_labels) >= 14
         assert "person name" in profile.selected_labels
 
 
@@ -208,6 +200,67 @@ class TestSampling:
         text = "Patient diagnosis medication hospital clinical" + ("x" * 10000)
         profile = profile_content(text)
         assert EntityDomain.MEDICAL in profile.categories
+
+
+class TestNegativeLabelSelection:
+    """Verify domain-specific labels are ABSENT when that domain is inactive."""
+
+    def test_medical_labels_absent_for_financial_text(self):
+        text = (
+            "Bank account statement showing wire transfer of $10,000.\n"
+            "IBAN: DE89370400440532013000\n"
+            "Payment received via credit card.\n"
+        )
+        profile = profile_content(text)
+        assert EntityDomain.FINANCIAL in profile.categories
+        assert EntityDomain.MEDICAL not in profile.categories
+        # Medical-specific labels should NOT be present
+        assert "medical record number" not in profile.selected_labels
+        assert "health plan number" not in profile.selected_labels
+        assert "npi number" not in profile.selected_labels
+
+    def test_financial_labels_absent_for_medical_text(self):
+        text = (
+            "Patient admitted with chief complaint of chest pain.\n"
+            "Diagnosis: Acute myocardial infarction.\n"
+            "Medication: Aspirin 325mg, Heparin drip.\n"
+        )
+        profile = profile_content(text)
+        assert EntityDomain.MEDICAL in profile.categories
+        assert EntityDomain.FINANCIAL not in profile.categories
+        # Financial-specific labels should NOT be present
+        assert "credit card number" not in profile.selected_labels
+        assert "bank account number" not in profile.selected_labels
+        assert "iban" not in profile.selected_labels
+
+    def test_credential_labels_absent_for_plain_text(self):
+        text = "The quick brown fox jumps over the lazy dog."
+        profile = profile_content(text)
+        assert EntityDomain.CREDENTIAL not in profile.categories
+        assert "api key" not in profile.selected_labels
+        assert "ip address" not in profile.selected_labels
+
+    def test_vehicle_labels_absent_for_medical_text(self):
+        text = (
+            "Patient diagnosis: Type 2 Diabetes.\n"
+            "Medication: Metformin 500mg.\n"
+            "Hospital: Springfield General.\n"
+        )
+        profile = profile_content(text)
+        assert EntityDomain.VEHICLE not in profile.categories
+        assert "vehicle identification number" not in profile.selected_labels
+        assert "license plate number" not in profile.selected_labels
+
+    def test_government_labels_absent_for_contact_text(self):
+        text = (
+            "Contact Directory\n"
+            "Phone: (555) 123-4567\n"
+            "Email: john@example.com\n"
+            "Address: 123 Main Street\n"
+        )
+        profile = profile_content(text)
+        assert EntityDomain.GOVERNMENT not in profile.categories
+        assert "unique identifier" not in profile.selected_labels
 
 
 class TestContentProfile:

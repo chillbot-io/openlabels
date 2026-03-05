@@ -16,6 +16,7 @@ from typing import Any
 
 import yaml
 
+from openlabels.core.entity_domains import EntityDomain
 from openlabels.core.policies.schema import (
     DataSubjectRights,
     HandlingRequirements,
@@ -27,6 +28,8 @@ from openlabels.core.policies.schema import (
 )
 
 logger = logging.getLogger(__name__)
+
+_VALID_DOMAIN_VALUES: frozenset[str] = frozenset(d.value for d in EntityDomain)
 
 
 # Built-in Policy Packs
@@ -536,15 +539,34 @@ def load_builtin_policies() -> list[PolicyPack]:
 
 
 # YAML/JSON Loader
+def _validate_domain_strings(domains: list[str], field_name: str) -> None:
+    """Warn on invalid domain strings in trigger config."""
+    for d in domains:
+        if d not in _VALID_DOMAIN_VALUES:
+            logger.warning(
+                "Unknown domain %r in %s; valid domains: %s",
+                d, field_name, sorted(_VALID_DOMAIN_VALUES),
+            )
+
+
 def _parse_trigger(data: dict[str, Any]) -> PolicyTrigger:
     """Parse trigger configuration from dict."""
+    domain_any_of = data.get("domain_any_of", [])
+    domain_all_of = data.get("domain_all_of", [])
+    domain_combinations = data.get("domain_combinations", [])
+
+    _validate_domain_strings(domain_any_of, "domain_any_of")
+    _validate_domain_strings(domain_all_of, "domain_all_of")
+    for combo in domain_combinations:
+        _validate_domain_strings(combo, "domain_combinations")
+
     return PolicyTrigger(
         any_of=data.get("any_of", []),
         all_of=data.get("all_of", []),
         combinations=data.get("combinations", []),
-        domain_any_of=data.get("domain_any_of", []),
-        domain_all_of=data.get("domain_all_of", []),
-        domain_combinations=data.get("domain_combinations", []),
+        domain_any_of=domain_any_of,
+        domain_all_of=domain_all_of,
+        domain_combinations=domain_combinations,
         min_confidence=data.get("min_confidence", 0.5),
         min_count=data.get("min_count", 1),
         exclude_if_only=data.get("exclude_if_only", []),

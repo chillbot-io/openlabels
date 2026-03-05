@@ -45,7 +45,6 @@ __all__ = [
     "evaluate_compositions",
     "get_compliance_frameworks",
     "get_max_score_multiplier",
-    "get_legacy_category",
 ]
 
 
@@ -145,6 +144,10 @@ ENTITY_DOMAIN_REGISTRY: dict[str, frozenset[EntityDomain]] = {
     "SI_DAVCNA":       frozenset({_ID, _GOV}),
     "SIN":             frozenset({_ID, _GOV}),
     "SIN_CA":          frozenset({_ID, _GOV}),
+    "AADHAAR":         frozenset({_ID, _GOV}),
+    "TFN":             frozenset({_ID, _GOV}),
+    "CURP":            frozenset({_ID, _GOV}),
+    "SVNR":            frozenset({_ID, _GOV}),
 
     # --- Medical IDs ---
     "MRN":             frozenset({_ID, _MED}),
@@ -169,6 +172,8 @@ ENTITY_DOMAIN_REGISTRY: dict[str, frozenset[EntityDomain]] = {
     "PRESCRIPTION":    frozenset({_MED}),
     "RX_NUMBER":       frozenset({_MED, _ID}),
     "BLOOD_TYPE":      frozenset({_MED, _BIO}),
+    "BMI":             frozenset({_MED, _BIO}),
+    "AUTH_NUMBER":     frozenset({_ID, _MED}),
 
     # --- Financial (Traditional) ---
     "CREDIT_CARD":     frozenset({_FIN, _ID}),
@@ -279,18 +284,17 @@ ENTITY_DOMAIN_REGISTRY: dict[str, frozenset[EntityDomain]] = {
     "COUNTY":          frozenset({_LOC}),
     "GPS_COORDINATE":  frozenset({_LOC}),
     "ROOM":            frozenset({_LOC}),
+    "BED_NUMBER":      frozenset({_LOC}),
     "LOCATION_OTHER":  frozenset({_LOC}),
 
     # --- Temporal ---
     "DATE":            frozenset({_TMP}),
     "DATE_DOB":        frozenset({_TMP, _ID}),
     "DATETIME":        frozenset({_TMP}),
-    "DATE_TIME":       frozenset({_TMP}),
     "TIME":            frozenset({_TMP}),
     "AGE":             frozenset({_TMP, _DEM}),
     "DATE_RANGE":      frozenset({_TMP}),
     "BIRTH_YEAR":      frozenset({_TMP, _ID}),
-    "YEAR_OF_BIRTH":   frozenset({_TMP, _ID}),
 
     # --- Network & Device ---
     "IP_ADDRESS":      frozenset({_NET}),
@@ -300,8 +304,8 @@ ENTITY_DOMAIN_REGISTRY: dict[str, frozenset[EntityDomain]] = {
     "BIOMETRIC_ID":    frozenset({_BIO, _ID}),
     "FINGERPRINT":     frozenset({_BIO, _ID}),
     "DNA_ID":          frozenset({_BIO, _ID}),
-    "IMAGE_ID":        frozenset({_NET, _ID}),
-    "PHOTO_ID":        frozenset({_NET, _ID}),
+    "IMAGE_ID":        frozenset({_BIO, _ID}),
+    "PHOTO_ID":        frozenset({_BIO, _ID}),
     "DICOM_UID":       frozenset({_MED, _NET}),
     "CERTIFICATE_NUMBER": frozenset({_ID}),
     "CLAIM_NUMBER":    frozenset({_ID}),
@@ -547,71 +551,6 @@ COMPLIANCE_COMPOSITIONS: list[ComplianceComposition] = [
 
 
 # ---------------------------------------------------------------------------
-# Legacy category mapping (for backward-compat during migration)
-# ---------------------------------------------------------------------------
-
-# Explicit map reproducing scorer.py ENTITY_CATEGORIES for exact backward compat.
-# Only covers types that were in the old map. Unknown types fall through to
-# a domain-based heuristic.
-_LEGACY_EXPLICIT: dict[str, str] = {
-    # direct_identifier
-    "SSN": "direct_identifier", "PASSPORT": "direct_identifier",
-    "DRIVER_LICENSE": "direct_identifier", "MILITARY_ID": "direct_identifier",
-    "TAX_ID": "direct_identifier", "ITIN": "direct_identifier",
-    "EIN": "direct_identifier", "UK_NINO": "direct_identifier",
-    "IN_PAN": "direct_identifier", "SG_NRIC_FIN": "direct_identifier",
-    "ES_NIE": "direct_identifier", "ES_NIF": "direct_identifier",
-    "PL_PESEL": "direct_identifier", "FI_HETU": "direct_identifier",
-    "IT_FISCAL_CODE": "direct_identifier", "KR_RRN": "direct_identifier",
-    "TH_TNIN": "direct_identifier", "MRN": "direct_identifier",
-    "STATE_ID": "direct_identifier", "LICENSE_PLATE": "direct_identifier",
-    # health_info
-    "DIAGNOSIS": "health_info", "MEDICATION": "health_info",
-    "HEALTH_PLAN_ID": "health_info", "NPI": "health_info",
-    "DEA": "health_info", "LAB_TEST": "health_info",
-    "PROCEDURE": "health_info",
-    # financial
-    "CREDIT_CARD": "financial", "IBAN": "financial",
-    "SWIFT_BIC": "financial", "ACCOUNT_NUMBER": "financial",
-    "CUSIP": "financial", "ISIN": "financial",
-    "BITCOIN_ADDRESS": "financial", "ETHEREUM_ADDRESS": "financial",
-    "CRYPTO_SEED_PHRASE": "financial",
-    # contact
-    "EMAIL": "contact", "PHONE": "contact", "ADDRESS": "contact",
-    "ZIP": "contact", "FAX": "contact", "URL": "contact",
-    "USERNAME": "contact",
-    # credential
-    "PASSWORD": "credential", "API_KEY": "credential",
-    "PRIVATE_KEY": "credential", "JWT": "credential",
-    "AWS_ACCESS_KEY": "credential", "AWS_SECRET_KEY": "credential",
-    "GITHUB_TOKEN": "credential", "GITLAB_TOKEN": "credential",
-    "SLACK_TOKEN": "credential", "STRIPE_KEY": "credential",
-    "DATABASE_URL": "credential",
-    # quasi_identifier
-    "NAME": "quasi_identifier", "FIRSTNAME": "quasi_identifier",
-    "LASTNAME": "quasi_identifier", "COMPANY": "quasi_identifier",
-    "DATE_DOB": "quasi_identifier", "AGE": "quasi_identifier",
-    "DATE": "quasi_identifier",
-    # classification_marking
-    "CLASSIFICATION_LEVEL": "classification_marking",
-    "CLASSIFICATION_MARKING": "classification_marking",
-    "SCI_MARKING": "classification_marking",
-    "DISSEMINATION_CONTROL": "classification_marking",
-}
-
-# Domain-based fallback for types not in the explicit map.
-_LEGACY_DOMAIN_PRIORITY: list[tuple[EntityDomain, str]] = [
-    (EntityDomain.CREDENTIAL, "credential"),
-    (EntityDomain.FINANCIAL, "financial"),
-    (EntityDomain.MEDICAL, "health_info"),
-    (EntityDomain.CONTACT, "contact"),
-    (EntityDomain.CLASSIFICATION, "classification_marking"),
-    (EntityDomain.GOVERNMENT, "direct_identifier"),
-    (EntityDomain.IDENTIFIER, "direct_identifier"),
-]
-
-
-# ---------------------------------------------------------------------------
 # Public API — lookups
 # ---------------------------------------------------------------------------
 
@@ -684,34 +623,3 @@ def get_max_score_multiplier(
     max_mult = compositions[0].score_multiplier  # already sorted desc
     names = [c.name for c in compositions if c.score_multiplier == max_mult]
     return max_mult, names
-
-
-# ---------------------------------------------------------------------------
-# Public API — backward compatibility
-# ---------------------------------------------------------------------------
-
-def get_legacy_category(entity_type: str) -> str:
-    """Map entity type to legacy scorer category name.
-
-    Uses an explicit map for types that were in the original ``ENTITY_CATEGORIES``
-    dict in scorer.py, and falls back to domain-based heuristic for new types.
-
-    Intended for migration period only.
-    """
-    normalized = normalize_entity_type(entity_type)
-
-    # Exact match against the old ENTITY_CATEGORIES
-    explicit = _LEGACY_EXPLICIT.get(normalized)
-    if explicit is not None:
-        return explicit
-
-    # Fallback: derive from domains
-    domains = get_domains(normalized)
-    if not domains:
-        return "unknown"
-
-    for domain, category in _LEGACY_DOMAIN_PRIORITY:
-        if domain in domains:
-            return category
-
-    return "unknown"

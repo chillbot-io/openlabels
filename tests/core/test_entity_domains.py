@@ -13,7 +13,6 @@ from openlabels.core.entity_domains import (
     get_all_domains,
     get_compliance_frameworks,
     get_domains,
-    get_legacy_category,
     get_max_score_multiplier,
 )
 from openlabels.core.policies.schema import PolicyCategory, RiskLevel
@@ -300,50 +299,6 @@ class TestGetMaxScoreMultiplier:
         # classified_data = 2.5
         mult, _ = get_max_score_multiplier({"SCI_MARKING": 1})
         assert mult == 2.5
-
-
-# -----------------------------------------------------------------------
-# get_legacy_category() — backward compatibility
-# -----------------------------------------------------------------------
-
-class TestGetLegacyCategory:
-    def test_direct_identifiers(self):
-        for t in ["SSN", "PASSPORT", "DRIVER_LICENSE", "MRN", "STATE_ID"]:
-            cat = get_legacy_category(t)
-            assert cat == "direct_identifier", f"{t} → {cat}"
-
-    def test_health_info(self):
-        for t in ["DIAGNOSIS", "MEDICATION", "HEALTH_PLAN_ID", "NPI"]:
-            cat = get_legacy_category(t)
-            assert cat == "health_info", f"{t} → {cat}"
-
-    def test_financial(self):
-        for t in ["CREDIT_CARD", "IBAN", "BITCOIN_ADDRESS"]:
-            cat = get_legacy_category(t)
-            assert cat == "financial", f"{t} → {cat}"
-
-    def test_contact(self):
-        for t in ["EMAIL", "PHONE", "FAX", "URL"]:
-            cat = get_legacy_category(t)
-            assert cat == "contact", f"{t} → {cat}"
-
-    def test_credentials(self):
-        for t in ["PASSWORD", "API_KEY", "AWS_ACCESS_KEY", "JWT"]:
-            cat = get_legacy_category(t)
-            assert cat == "credential", f"{t} → {cat}"
-
-    def test_quasi_identifiers(self):
-        for t in ["NAME", "FIRSTNAME", "LASTNAME", "COMPANY", "DATE_DOB", "AGE"]:
-            cat = get_legacy_category(t)
-            assert cat == "quasi_identifier", f"{t} → {cat}"
-
-    def test_classification_markings(self):
-        for t in ["CLASSIFICATION_LEVEL", "SCI_MARKING", "DISSEMINATION_CONTROL"]:
-            cat = get_legacy_category(t)
-            assert cat == "classification_marking", f"{t} → {cat}"
-
-    def test_unknown_type(self):
-        assert get_legacy_category("TOTALLY_UNKNOWN_XYZ") == "unknown"
 
 
 # -----------------------------------------------------------------------
