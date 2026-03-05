@@ -87,6 +87,10 @@ ENTITY_WEIGHTS: dict[str, int] = {
     "PL_PESEL": 8,
     "KR_RRN": 8,
     "IT_FISCAL_CODE": 8,
+    "AADHAAR": 8,
+    "CURP": 8,
+    "SVNR": 8,
+    "TFN": 8,
     "ATLASSIAN_TOKEN": 9,
 
     # Elevated (6-7)
@@ -100,6 +104,8 @@ ENTITY_WEIGHTS: dict[str, int] = {
     "IN_VOTER": 7,
     "IT_VAT": 7,
     "NHS_NUMBER": 7,
+    "AUTH_NUMBER": 7,
+    "BMI": 6,
     "SOLANA_ADDRESS": 7,
     "MONERO_ADDRESS": 7,
     "GOOGLE_OAUTH_TOKEN": 7,
@@ -151,6 +157,7 @@ ENTITY_WEIGHTS: dict[str, int] = {
     "URL": 2,
 
     # Minimal (1)
+    "BED_NUMBER": 2,
     "FACILITY": 1,
     "ORGANIZATION": 1,
     "COMPANY": 1,
