@@ -129,8 +129,87 @@ def _strip_sql_comments(sql: str) -> str:
     return "".join(result)
 
 
+def _validate_sql_ast(sql: str) -> None:
+    """Validate SQL safety using AST-based parsing via sqlglot.
+
+    Parses the query into an AST and walks all nodes to ensure only
+    SELECT/WITH statements are present and no dangerous functions or
+    DDL/DML operations exist.  This is the primary defense layer.
+
+    Raises ValueError on unsafe input.
+    """
+    import sqlglot
+    from sqlglot import exp
+
+    try:
+        statements = sqlglot.parse(sql, read="duckdb", error_level=sqlglot.ErrorLevel.RAISE)
+    except sqlglot.errors.ParseError as e:
+        raise ValueError(f"SQL parse error: {e}") from e
+
+    if not statements:
+        raise ValueError("Empty query")
+
+    if len(statements) > 1:
+        raise ValueError("Multiple statements are not allowed")
+
+    stmt = statements[0]
+
+    # Only allow SELECT (which includes CTEs / WITH)
+    _ALLOWED_AST_TYPES = (exp.Select, exp.Union, exp.Intersect, exp.Except, exp.Subquery)
+    if not isinstance(stmt, _ALLOWED_AST_TYPES):
+        raise ValueError(
+            f"Only SELECT and WITH (CTE) queries are allowed, got {type(stmt).__name__}"
+        )
+
+    # Walk the entire AST and reject dangerous node types
+    _FORBIDDEN_AST_TYPES = (
+        exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create, exp.Alter,
+        exp.Command, exp.Set, exp.Transaction, exp.Commit, exp.Rollback,
+        exp.Grant, exp.Copy, exp.LoadData,
+    )
+
+    # Functions that could read filesystem, make network requests, or leak info
+    _BLOCKED_FUNC_NAMES = frozenset({
+        "pg_read_file", "pg_read_binary_file", "read_text", "read_blob",
+        "read_csv", "read_csv_auto", "read_json", "read_json_auto",
+        "read_parquet", "read_ndjson", "read_ndjson_auto",
+        "glob", "scan_parquet", "scan_csv", "scan_json",
+        "httpfs", "http_get", "http_post",
+        "duckdb_settings",
+        "system", "shell", "attach", "copy",
+        "export_database", "import_database",
+        "load", "install",
+    })
+    # Underscore-stripped keys for matching typed nodes (e.g. ReadCSV -> readcsv)
+    _BLOCKED_FUNC_KEYS = frozenset(n.replace("_", "") for n in _BLOCKED_FUNC_NAMES)
+
+    for node in stmt.walk():
+        if isinstance(node, _FORBIDDEN_AST_TYPES):
+            raise ValueError(
+                f"Query contains forbidden statement type: {type(node).__name__}"
+            )
+        if isinstance(node, exp.Func):
+            # For Anonymous (unknown) functions, node.name holds the actual
+            # function name.  For typed nodes (e.g. ReadCSV), sql_name()
+            # returns the canonical SQL form ("READ_CSV").
+            if isinstance(node, exp.Anonymous):
+                func_name = (getattr(node, "name", "") or "").lower()
+            else:
+                func_name = node.sql_name().lower() if hasattr(node, "sql_name") else ""
+            if not func_name:
+                func_name = (getattr(node, "name", "") or "").lower()
+            # Normalize underscores for matching (read_csv vs readcsv)
+            func_key = func_name.replace("_", "")
+            if func_name in _BLOCKED_FUNC_NAMES or func_key in _BLOCKED_FUNC_KEYS:
+                raise ValueError(f"Query contains blocked function: {func_name}")
+
+
 def validate_sql(sql: str) -> str:
     """Validate that a SQL query is safe to execute.
+
+    Uses a two-layer defense:
+    1. AST-based validation via sqlglot (primary — structural analysis)
+    2. Regex-based validation (secondary — defense in depth)
 
     Returns the cleaned SQL string. Raises ValueError on unsafe input.
     """
@@ -142,9 +221,10 @@ def validate_sql(sql: str) -> str:
     if len(sql) > MAX_QUERY_LENGTH:
         raise ValueError(f"Query exceeds maximum length ({MAX_QUERY_LENGTH} characters)")
 
-    # SECURITY: Strip SQL comments before validation so that forbidden
-    # keywords hidden inside comments (e.g. ``SELECT /* DROP TABLE */ ...``)
-    # are not smuggled past the regex checks.
+    # PRIMARY: AST-based validation
+    _validate_sql_ast(sql)
+
+    # SECONDARY (defense in depth): regex-based checks on comment-stripped SQL
     sql_no_comments = _strip_sql_comments(sql)
 
     if not _ALLOWED_START.match(sql_no_comments):
@@ -157,8 +237,6 @@ def validate_sql(sql: str) -> str:
         raise ValueError("Query contains blocked functions")
 
     # Check for multiple statements (semicolons within the query)
-    # Allow semicolons inside string literals but block bare ones.
-    # SQL uses doubled quotes ('' or "") for escaping, not backslash.
     in_string = False
     quote_char: str | None = None
     i = 0
@@ -167,11 +245,9 @@ def validate_sql(sql: str) -> str:
         ch = sql[i]
         if in_string:
             if ch == quote_char:
-                # Doubled quote = escape, stay in string
                 if i + 1 < length and sql[i + 1] == quote_char:
-                    i += 2  # skip both quotes
+                    i += 2
                     continue
-                # Single quote = end of string
                 in_string = False
         else:
             if ch in ("'", '"'):
@@ -631,9 +707,8 @@ async def export_query_results(
             detail=f"Query timed out after {QUERY_TIMEOUT_SECONDS} seconds",
         ) from None
     except Exception as e:
-        error_msg = str(e)
-        safe_msg = error_msg.split("\n")[0][:200] if error_msg else "Unknown error"
-        raise HTTPException(status_code=400, detail=f"Query error: {safe_msg}") from e
+        logger.warning("Query export execution failed: %s", e)
+        raise HTTPException(status_code=400, detail="Query execution failed") from None
 
     columns = list(rows[0].keys()) if rows else []
 
@@ -759,11 +834,12 @@ async def ai_query(
             error=f"Query timed out after {QUERY_TIMEOUT_SECONDS} seconds",
         )
     except Exception as e:
+        logger.warning("AI query execution failed: %s", e)
         return AIQueryResponse(
             question=body.question,
             generated_sql=clean_sql,
             explanation=explanation,
-            error=f"Query execution failed: {e}",
+            error="Query execution failed",
         )
     elapsed_ms = int((time.monotonic() - start) * 1000)
 

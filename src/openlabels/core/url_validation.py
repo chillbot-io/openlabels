@@ -27,6 +27,48 @@ _BLOCKED_NETWORKS = [
 ]
 
 
+def resolve_and_validate(
+    hostname: str, port: int | None = None, *, name: str = "host",
+) -> list[str]:
+    """Resolve a hostname and validate all IPs against blocked networks.
+
+    Returns the list of validated IP address strings so callers can pin
+    the resolved IPs for subsequent connections, preventing DNS rebinding
+    (TOCTOU) attacks where a hostname resolves to a safe IP during
+    validation but a private IP during actual use.
+
+    Raises:
+        ValueError: If the host is unresolvable or targets a blocked network.
+    """
+    try:
+        addr_infos = socket.getaddrinfo(
+            hostname, port, proto=socket.IPPROTO_TCP,
+        )
+    except socket.gaierror as exc:
+        raise ValueError(
+            f"Cannot resolve {name} '{hostname}': {exc}"
+        ) from exc
+
+    if not addr_infos:
+        raise ValueError(
+            f"Cannot resolve {name} '{hostname}': no addresses found"
+        )
+
+    validated_ips: list[str] = []
+    for addr_info in addr_infos:
+        ip_str = addr_info[4][0]
+        ip_addr = ipaddress.ip_address(ip_str)
+        for network in _BLOCKED_NETWORKS:
+            if ip_addr in network:
+                raise ValueError(
+                    f"{name} '{hostname}' resolves to private/internal "
+                    f"address {ip_str} (in {network}). This is not allowed."
+                )
+        validated_ips.append(ip_str)
+
+    return validated_ips
+
+
 def validate_url(url: str, *, name: str = "URL") -> str:
     """Validate that a URL does not target private/internal IPs.
 
@@ -58,29 +100,7 @@ def validate_url(url: str, *, name: str = "URL") -> str:
     if not hostname:
         raise ValueError(f"{name} is missing a hostname")
 
-    try:
-        addr_infos = socket.getaddrinfo(
-            hostname, parsed.port or 443, proto=socket.IPPROTO_TCP,
-        )
-    except socket.gaierror as exc:
-        raise ValueError(
-            f"Cannot resolve {name} hostname '{hostname}': {exc}"
-        ) from exc
-
-    if not addr_infos:
-        raise ValueError(
-            f"Cannot resolve {name} hostname '{hostname}': no addresses found"
-        )
-
-    for addr_info in addr_infos:
-        ip_str = addr_info[4][0]
-        ip_addr = ipaddress.ip_address(ip_str)
-        for network in _BLOCKED_NETWORKS:
-            if ip_addr in network:
-                raise ValueError(
-                    f"{name} hostname '{hostname}' resolves to private/internal "
-                    f"address {ip_str} (in {network}). This is not allowed."
-                )
+    resolve_and_validate(hostname, parsed.port or 443, name=f"{name} hostname")
 
     return url
 
@@ -100,28 +120,6 @@ def validate_host(host: str, port: int, *, name: str = "host") -> str:
     if not host:
         raise ValueError(f"{name} must not be empty")
 
-    try:
-        addr_infos = socket.getaddrinfo(
-            host, port, proto=socket.IPPROTO_TCP,
-        )
-    except socket.gaierror as exc:
-        raise ValueError(
-            f"Cannot resolve {name} '{host}': {exc}"
-        ) from exc
-
-    if not addr_infos:
-        raise ValueError(
-            f"Cannot resolve {name} '{host}': no addresses found"
-        )
-
-    for addr_info in addr_infos:
-        ip_str = addr_info[4][0]
-        ip_addr = ipaddress.ip_address(ip_str)
-        for network in _BLOCKED_NETWORKS:
-            if ip_addr in network:
-                raise ValueError(
-                    f"{name} '{host}' resolves to private/internal "
-                    f"address {ip_str} (in {network}). This is not allowed."
-                )
+    resolve_and_validate(host, port, name=name)
 
     return host

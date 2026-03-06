@@ -1,6 +1,7 @@
 """Tests for ElasticSearch SIEM adapter."""
 
 import json
+import socket
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -8,6 +9,16 @@ import pytest
 
 from openlabels.export.adapters.base import ExportRecord
 from openlabels.export.adapters.elastic import ElasticAdapter
+
+
+# Mock DNS resolution: return a public IP so SSRF validation passes for test hosts.
+_FAKE_ADDRINFO = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 9200))]
+
+
+@pytest.fixture(autouse=True)
+def _mock_dns():
+    with patch("openlabels.core.url_validation.socket.getaddrinfo", return_value=_FAKE_ADDRINFO):
+        yield
 
 
 def _make_record(**overrides) -> ExportRecord:

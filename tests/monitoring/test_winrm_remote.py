@@ -1,6 +1,7 @@
 """Tests for WinRM remote audit configuration and command injection prevention."""
 
 import json
+import socket
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,10 +17,21 @@ from openlabels.monitoring.winrm_remote import (
 )
 
 
+# Mock DNS resolution: return a public IP so SSRF validation passes for test hosts.
+_FAKE_ADDRINFO = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 5986))]
+
+
+@pytest.fixture(autouse=True)
+def _mock_dns():
+    with patch("openlabels.core.url_validation.socket.getaddrinfo", return_value=_FAKE_ADDRINFO):
+        yield
+
+
 class TestGetWinrmSession:
     """Tests for WinRM session creation."""
 
-    def test_http_endpoint(self):
+    def test_default_ssl_endpoint(self):
+        """Default use_ssl=True produces HTTPS with pinned IP."""
         mock_winrm = MagicMock()
         mock_session = MagicMock()
         mock_winrm.Session.return_value = mock_session
@@ -29,9 +41,23 @@ class TestGetWinrmSession:
 
         mock_winrm.Session.assert_called_once()
         call_args = mock_winrm.Session.call_args
-        assert "http://server1:5985/wsman" in call_args[0]
+        # _validate_host now returns a pinned IP, so endpoint uses the IP
+        endpoint = call_args[0][0]
+        assert endpoint.startswith("https://") and ":5986/wsman" in endpoint
         assert call_args[1]["auth"] == ("admin", "pass123")
         assert call_args[1]["transport"] == "ntlm"
+
+    def test_http_endpoint(self):
+        mock_winrm = MagicMock()
+        mock_session = MagicMock()
+        mock_winrm.Session.return_value = mock_session
+
+        with patch.dict("sys.modules", {"winrm": mock_winrm}):
+            _get_winrm_session("server1", "admin", "pass123", use_ssl=False)
+
+        call_args = mock_winrm.Session.call_args
+        endpoint = call_args[0][0]
+        assert endpoint.startswith("http://") and ":5985/wsman" in endpoint
 
     def test_https_endpoint(self):
         mock_winrm = MagicMock()
@@ -41,7 +67,8 @@ class TestGetWinrmSession:
             _get_winrm_session("server1", "admin", "pass123", use_ssl=True)
 
         call_args = mock_winrm.Session.call_args
-        assert "https://server1:5986/wsman" in call_args[0]
+        endpoint = call_args[0][0]
+        assert endpoint.startswith("https://") and ":5986/wsman" in endpoint
 
     def test_kerberos_transport_for_upn(self):
         """Username with @ (UPN format) should use Kerberos."""
@@ -183,72 +210,18 @@ class TestTestConnection:
 class TestCommandInjectionPrevention:
     """Tests for command injection prevention in audit configuration.
 
-    These tests verify that malicious inputs are properly sanitized
-    or rejected before being passed to PowerShell scripts.
+    PowerShell single-quoted strings ('...') are used, which treat all
+    characters literally except single quotes (escaped by doubling: '').
+    This means special chars like ;, $, `, |, & are safe inside the
+    string and no longer need to be rejected.
     """
 
-    async def test_path_with_semicolon_rejected(self):
-        """Semicolons in paths could chain PowerShell commands."""
-        result = await self._configure_with_paths(["D:\\Share; Remove-Item C:\\ -Recurse"])
-        assert result.success is False
-        assert "invalid characters" in result.error.lower()
-
-    async def test_path_with_backtick_rejected(self):
-        """Backticks are PowerShell escape characters."""
-        result = await self._configure_with_paths(["D:\\Share`whoami"])
-        assert result.success is False
-
-    async def test_path_with_dollar_sign_rejected(self):
-        """Dollar signs could inject PS variable expansion."""
-        result = await self._configure_with_paths(["D:\\$env:USERNAME"])
-        assert result.success is False
-
-    async def test_path_with_pipe_rejected(self):
-        """Pipes could chain commands."""
-        result = await self._configure_with_paths(["D:\\Share | Get-Process"])
-        assert result.success is False
-
-    async def test_path_with_ampersand_rejected(self):
-        """Ampersands could invoke additional commands."""
-        result = await self._configure_with_paths(["D:\\Share & del *.*"])
-        assert result.success is False
-
-    async def test_path_with_double_quotes_rejected(self):
-        """Double quotes could break out of string context."""
-        result = await self._configure_with_paths(['D:\\Share"; Remove-Item C:\\'])
-        assert result.success is False
-
-    async def test_path_with_single_quotes_rejected(self):
-        """Single quotes could break string delimiters."""
-        result = await self._configure_with_paths(["D:\\Share'; Remove-Item C:\\"])
-        assert result.success is False
-
-    async def test_path_with_newline_rejected(self):
-        """Newlines could inject additional script lines."""
-        result = await self._configure_with_paths(["D:\\Share\nRemove-Item C:\\"])
-        assert result.success is False
-
-    async def test_path_with_carriage_return_rejected(self):
-        """Carriage returns could inject additional script lines."""
-        result = await self._configure_with_paths(["D:\\Share\rRemove-Item C:\\"])
-        assert result.success is False
-
-    async def test_all_paths_malicious_returns_error(self):
-        """If every path is rejected, the function should return failure."""
-        result = await self._configure_with_paths([
-            "D:\\Share; whoami",
-            "D:\\Share`id",
-            "D:\\$env:PATH",
-        ])
-        assert result.success is False
-        assert "All paths rejected" in result.message
-
-    async def test_mixed_paths_only_valid_used(self):
-        """Valid paths should be processed even if some are rejected."""
+    async def test_path_with_single_quote_escaped(self):
+        """Single quotes in paths are escaped by doubling in PS single-quoted strings."""
         mock_result = MagicMock()
         mock_result.status_code = 0
         mock_result.std_out = json.dumps([
-            {"path": "D:\\ValidShare", "status": "configured"},
+            {"path": "D:\\O'Brien", "status": "configured"},
         ]).encode("utf-8")
         mock_result.std_err = b""
 
@@ -261,14 +234,74 @@ class TestCommandInjectionPrevention:
         ):
             result = await configure_audit_policy(
                 "server1", "admin", "pass",
-                share_paths=["D:\\ValidShare", "D:\\Bad;Path"],
+                share_paths=["D:\\O'Brien"],
             )
 
         assert result.success is True
-        # The PowerShell script should only contain the valid path
         script_arg = mock_session.run_ps.call_args[0][0]
-        assert "D:\\ValidShare" in script_arg
-        assert "D:\\Bad;Path" not in script_arg
+        # Verify the single quote was doubled for PS escaping
+        assert "O''Brien" in script_arg
+
+    async def test_special_chars_safe_in_single_quotes(self):
+        """Chars like $, `, ;, | are safe inside PS single-quoted strings."""
+        mock_result = MagicMock()
+        mock_result.status_code = 0
+        mock_result.std_out = json.dumps([
+            {"path": "D:\\$env", "status": "not_found"},
+        ]).encode("utf-8")
+        mock_result.std_err = b""
+
+        mock_session = MagicMock()
+        mock_session.run_ps.return_value = mock_result
+
+        with patch(
+            "openlabels.monitoring.winrm_remote._get_winrm_session",
+            return_value=mock_session,
+        ):
+            result = await configure_audit_policy(
+                "server1", "admin", "pass",
+                share_paths=["D:\\$env"],
+            )
+
+        # Path is accepted (it's safe in single quotes), even though
+        # it won't exist on the server (status=not_found)
+        script_arg = mock_session.run_ps.call_args[0][0]
+        assert "'D:\\$env'" in script_arg
+
+    async def test_empty_and_whitespace_paths_skipped(self):
+        """Empty or whitespace-only paths should be filtered out."""
+        result = await self._configure_with_paths(["", "  ", "   "])
+        assert result.success is False
+        assert "No valid paths" in result.error
+
+    async def test_all_paths_with_special_chars_accepted(self):
+        """With PS single-quoted strings, all these paths are safely handled."""
+        mock_result = MagicMock()
+        mock_result.status_code = 0
+        mock_result.std_out = json.dumps([
+            {"path": "D:\\Share; whoami", "status": "not_found"},
+            {"path": "D:\\Share`id", "status": "not_found"},
+            {"path": "D:\\$env:PATH", "status": "not_found"},
+        ]).encode("utf-8")
+        mock_result.std_err = b""
+
+        mock_session = MagicMock()
+        mock_session.run_ps.return_value = mock_result
+
+        with patch(
+            "openlabels.monitoring.winrm_remote._get_winrm_session",
+            return_value=mock_session,
+        ):
+            result = await configure_audit_policy(
+                "server1", "admin", "pass",
+                share_paths=["D:\\Share; whoami", "D:\\Share`id", "D:\\$env:PATH"],
+            )
+
+        # All paths are passed through (safely quoted), none rejected
+        script_arg = mock_session.run_ps.call_args[0][0]
+        assert "'D:\\Share; whoami'" in script_arg
+        assert "'D:\\Share`id'" in script_arg
+        assert "'D:\\$env:PATH'" in script_arg
 
     async def test_legitimate_paths_accepted(self):
         """Normal Windows paths should pass validation."""

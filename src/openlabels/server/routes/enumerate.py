@@ -58,9 +58,12 @@ def _validate_host(host: str) -> str:
 
     Rejects private/internal IP ranges to prevent internal network
     reconnaissance via SMB/NFS enumeration.
+
+    Returns a validated IP address (not the hostname) to prevent DNS
+    rebinding attacks where the hostname re-resolves to a different IP
+    between validation and use.
     """
-    import ipaddress
-    import socket
+    from openlabels.core.url_validation import resolve_and_validate
 
     host = host.strip()
     if not host:
@@ -72,22 +75,14 @@ def _validate_host(host: str) -> str:
     if ".." in host:
         raise HTTPException(status_code=400, detail="Host contains invalid traversal sequence")
 
-    # Block private/internal IP ranges to prevent SSRF / network recon
+    # Resolve and validate, then return the first safe IP to pin it
     try:
-        addr_infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-    except socket.gaierror:
-        raise HTTPException(status_code=400, detail=f"Cannot resolve host: {host}") from None
+        validated_ips = resolve_and_validate(host, name="host")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
 
-    for addr_info in addr_infos:
-        ip_addr = ipaddress.ip_address(addr_info[4][0])
-        for network in _BLOCKED_NETWORKS:
-            if ip_addr in network:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Host resolves to a private/internal address, which is not allowed",
-                )
-
-    return host
+    # Return the first validated IP to prevent DNS rebinding
+    return validated_ips[0]
 
 
 def _validate_uuid(value: str, label: str) -> str:

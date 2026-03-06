@@ -23,6 +23,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openlabels.auth.dependencies import CurrentUser, get_current_user, require_admin
+from openlabels.server.security import sanitize_log_value
 from openlabels.core.types import AdapterType
 from openlabels.server.crypto import (
     decrypt_config_credentials,
@@ -118,7 +119,7 @@ def validate_filesystem_target_config(config: dict) -> dict:
     # Check for path traversal patterns
     for pattern in BLOCKED_SCAN_PATH_PATTERNS:
         if pattern.search(path):
-            logger.warning(f"Blocked scan target with suspicious path pattern: {path}")
+            logger.warning("Blocked scan target with suspicious path pattern: %s", sanitize_log_value(path))
             raise HTTPException(
                 status_code=400,
                 detail="Path contains invalid characters or traversal sequences"
@@ -129,7 +130,7 @@ def validate_filesystem_target_config(config: dict) -> dict:
     for blocked in BLOCKED_SCAN_PATH_PREFIXES:
         blocked_lower = blocked.lower()
         if path_lower == blocked_lower or path_lower.startswith(blocked_lower + os.sep):
-            logger.warning(f"Blocked scan target for system directory: {path}")
+            logger.warning("Blocked scan target for system directory: %s", sanitize_log_value(path))
             raise HTTPException(
                 status_code=403,
                 detail=f"Scanning system directories is not allowed: {blocked}"
@@ -197,7 +198,7 @@ def validate_sharepoint_target_config(config: dict) -> dict:
     )
 
     if not is_valid_domain:
-        logger.warning(f"Blocked SharePoint target with non-SharePoint domain: {hostname}")
+        logger.warning("Blocked SharePoint target with non-SharePoint domain: %s", sanitize_log_value(hostname))
         raise HTTPException(
             status_code=400,
             detail="site_url must be a valid SharePoint domain (*.sharepoint.com)"

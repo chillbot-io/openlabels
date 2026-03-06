@@ -11,6 +11,8 @@ Security features:
 import logging
 import os
 
+from openlabels.server.security import sanitize_log_value
+
 logger = logging.getLogger(__name__)
 
 
@@ -88,7 +90,7 @@ def validate_path(
     # Security: Reject paths containing null bytes to prevent null byte injection attacks
     # Null bytes can be used to truncate paths: "/data/file.pdf\x00.txt" -> "/data/file.pdf"
     if "\x00" in file_path:
-        logger.warning(f"Null byte injection attempt detected: {repr(file_path)}")
+        logger.warning("Null byte injection attempt detected: %s", sanitize_log_value(repr(file_path)))
         raise PathValidationError("Path contains null bytes")
 
     # Store original for traversal detection
@@ -114,7 +116,7 @@ def validate_path(
     # Check if path traversal was attempted
     # If original path contains "..", log a warning (the path was normalized)
     if ".." in original_path:
-        logger.warning(f"Path traversal attempt detected: {original_path}")
+        logger.warning("Path traversal attempt detected: %s", sanitize_log_value(original_path))
         raise PathValidationError("Path traversal is not allowed")
 
     # Block access to system directories (also check canonical path for Unix paths)
@@ -183,7 +185,7 @@ def _check_blocked_paths(path: str) -> None:
     for blocked in BLOCKED_PATH_PREFIXES:
         blocked_lower = blocked.lower()
         if path_lower.startswith(blocked_lower):
-            logger.warning(f"Blocked access to system path: {path}")
+            logger.warning("Blocked access to system path: %s", sanitize_log_value(path))
             raise PathValidationError("Access to system directories is not allowed")
 
 
@@ -192,7 +194,7 @@ def _check_blocked_patterns(path: str) -> None:
     path_parts = path.lower().replace("\\", "/")
     for pattern in BLOCKED_FILE_PATTERNS:
         if pattern in path_parts:
-            logger.warning(f"Blocked access to sensitive file: {path}")
+            logger.warning("Blocked access to sensitive file: %s", sanitize_log_value(path))
             raise PathValidationError("Access to this file type is not allowed")
 
 

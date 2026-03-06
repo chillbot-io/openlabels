@@ -43,16 +43,16 @@ def _get_fernet():
     settings = get_settings()
     key_secret = settings.auth.session_encryption_key
     if not key_secret or not key_secret.get_secret_value():
-        if settings.server.environment == "production":
+        if settings.server.environment in ("production", "staging"):
             raise RuntimeError(
-                "AUTH_SESSION_ENCRYPTION_KEY must be set in production. "
-                "Session tokens cannot be stored in plaintext in production "
+                "AUTH_SESSION_ENCRYPTION_KEY must be set in production and staging. "
+                "Session tokens cannot be stored in plaintext in production or staging "
                 "deployments (M3, M10). Generate a key with: "
                 "python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
             )
         logger.warning(
             "AUTH_SESSION_ENCRYPTION_KEY is not set — session tokens are "
-            "stored in plaintext. Set this key for production deployments."
+            "stored in plaintext. Set this key for production/staging deployments."
         )
         _fernet = False
         return None
