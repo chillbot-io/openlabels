@@ -16,12 +16,13 @@ Provides:
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from openlabels.server.dependencies import (
     AdminContextDep,
@@ -161,8 +162,37 @@ def _policy_response(policy) -> PolicyResponse:
     )
 
 
+_MAX_CONFIG_SIZE = 100_000  # 100 KB max JSON size for policy config
+_MAX_CONFIG_DEPTH = 10  # Maximum nesting depth
+
+
+def _check_config_depth(obj: object, depth: int = 0) -> None:
+    """Reject deeply nested structures that could cause parsing DoS."""
+    if depth > _MAX_CONFIG_DEPTH:
+        raise ValueError(f"Policy config exceeds maximum nesting depth ({_MAX_CONFIG_DEPTH})")
+    if isinstance(obj, dict):
+        for v in obj.values():
+            _check_config_depth(v, depth + 1)
+    elif isinstance(obj, list):
+        for v in obj:
+            _check_config_depth(v, depth + 1)
+
+
+def _validate_policy_config(config: dict) -> dict:
+    """Validate policy config size and depth."""
+    serialized = json.dumps(config, default=str)
+    if len(serialized) > _MAX_CONFIG_SIZE:
+        raise ValueError(
+            f"Policy config exceeds maximum size ({_MAX_CONFIG_SIZE} bytes)"
+        )
+    _check_config_depth(config)
+    return config
+
+
 class PolicyCreate(BaseModel):
     """Request to create a custom policy."""
+
+    model_config = ConfigDict(extra="forbid")
 
     name: str = Field(..., max_length=255)
     description: str | None = Field(None, max_length=2000)
@@ -172,9 +202,16 @@ class PolicyCreate(BaseModel):
     config: dict = Field(..., description="Full PolicyPack definition as JSON")
     priority: int = 0
 
+    @field_validator("config")
+    @classmethod
+    def validate_config(cls, v: dict) -> dict:
+        return _validate_policy_config(v)
+
 
 class PolicyUpdate(BaseModel):
     """Request to update a policy (partial)."""
+
+    model_config = ConfigDict(extra="forbid")
 
     name: str | None = Field(None, max_length=255)
     description: str | None = Field(None, max_length=2000)
@@ -183,6 +220,13 @@ class PolicyUpdate(BaseModel):
     enabled: bool | None = None
     config: dict | None = None
     priority: int | None = None
+
+    @field_validator("config")
+    @classmethod
+    def validate_config(cls, v: dict | None) -> dict | None:
+        if v is not None:
+            return _validate_policy_config(v)
+        return v
 
 
 class PolicyToggle(BaseModel):
@@ -302,6 +346,8 @@ class TargetAssignmentResponse(BaseModel):
 class PolicyImportItem(BaseModel):
     """Single policy definition for import."""
 
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(..., max_length=255)
     description: str | None = Field(None, max_length=2000)
     framework: str = Field(..., max_length=50)
@@ -310,11 +356,16 @@ class PolicyImportItem(BaseModel):
     config: dict = Field(...)
     priority: int = 0
 
+    @field_validator("config")
+    @classmethod
+    def validate_config(cls, v: dict) -> dict:
+        return _validate_policy_config(v)
+
 
 class PolicyImportRequest(BaseModel):
     """Bulk import of policy definitions."""
 
-    policies: list[PolicyImportItem]
+    policies: list[PolicyImportItem] = Field(..., min_length=1, max_length=50)
 
 
 class PolicyExportResponse(BaseModel):

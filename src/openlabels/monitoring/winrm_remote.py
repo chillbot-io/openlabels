@@ -33,10 +33,11 @@ def _validate_host(host: str) -> str:
     """Validate and sanitize WinRM host parameter to prevent injection.
 
     Also blocks private/internal IP ranges to prevent SSRF.
+
+    Returns a validated IP address (not the hostname) to prevent DNS
+    rebinding attacks.
     """
-    import ipaddress
     import re
-    import socket
 
     # Allow only valid hostnames, FQDNs, and IPv4/IPv6 addresses
     if not re.match(r'^[a-zA-Z0-9._:\[\]-]+$', host):
@@ -44,24 +45,11 @@ def _validate_host(host: str) -> str:
     if len(host) > 253:
         raise ValueError(f"WinRM host too long: {len(host)} chars")
 
-    # Block private/internal IP ranges
-    from openlabels.core.url_validation import _BLOCKED_NETWORKS
+    from openlabels.core.url_validation import resolve_and_validate
 
-    try:
-        addr_infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-    except socket.gaierror as exc:
-        raise ValueError(f"Cannot resolve WinRM host '{host}': {exc}") from exc
-
-    for addr_info in addr_infos:
-        ip_addr = ipaddress.ip_address(addr_info[4][0])
-        for network in _BLOCKED_NETWORKS:
-            if ip_addr in network:
-                raise ValueError(
-                    f"WinRM host '{host}' resolves to private/internal "
-                    f"address ({network}), which is not allowed"
-                )
-
-    return host
+    validated_ips = resolve_and_validate(host, name="WinRM host")
+    # Return the first validated IP to prevent DNS rebinding
+    return validated_ips[0]
 
 
 def _get_winrm_session(
@@ -226,21 +214,28 @@ async def configure_audit_policy(
         # 1. Enables "Audit object access → File System" policy
         # 2. Adds SACL audit rules on each path
         # Each path is validated server-side via Test-Path.
-        _INJECTION_CHARS = set('"\'`$\n\r;&|(){}%#<>')
+        #
+        # SECURITY: Use PowerShell single-quoted strings (verbatim, no
+        # interpolation) and escape the only special character — the
+        # single quote itself — by doubling it ('').  This is the
+        # PowerShell equivalent of SQL's quote escaping and is immune to
+        # injection via $, `, ", or any other metacharacter.
         validated_paths = []
         for p in share_paths:
-            if any(c in p for c in _INJECTION_CHARS):
+            if not p or not p.strip():
                 continue
-            validated_paths.append(p)
+            # Escape for PowerShell single-quoted strings: double any '
+            escaped = p.replace("'", "''")
+            validated_paths.append(escaped)
 
         if not validated_paths:
             return WinRMResult(
                 success=False,
                 message="All paths rejected",
-                error="Paths contain invalid characters",
+                error="No valid paths provided",
             )
 
-        path_array = ",\n".join(f'    "{p}"' for p in validated_paths)
+        path_array = ",\n".join(f"    '{p}'" for p in validated_paths)
         ps_script = f"""
 # Enable audit policy for File System
 auditpol /set /subcategory:"File System" /success:enable /failure:enable | Out-Null
