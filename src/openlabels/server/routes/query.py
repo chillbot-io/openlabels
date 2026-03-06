@@ -163,9 +163,9 @@ def _validate_sql_ast(sql: str) -> None:
 
     # Walk the entire AST and reject dangerous node types
     _FORBIDDEN_AST_TYPES = (
-        exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create, exp.AlterTable,
+        exp.Insert, exp.Update, exp.Delete, exp.Drop, exp.Create, exp.Alter,
         exp.Command, exp.Set, exp.Transaction, exp.Commit, exp.Rollback,
-        exp.Grant, exp.Copy, exp.Load,
+        exp.Grant, exp.Copy, exp.LoadData,
     )
 
     # Functions that could read filesystem, make network requests, or leak info
@@ -180,17 +180,27 @@ def _validate_sql_ast(sql: str) -> None:
         "export_database", "import_database",
         "load", "install",
     })
+    # Underscore-stripped keys for matching typed nodes (e.g. ReadCSV -> readcsv)
+    _BLOCKED_FUNC_KEYS = frozenset(n.replace("_", "") for n in _BLOCKED_FUNC_NAMES)
 
     for node in stmt.walk():
         if isinstance(node, _FORBIDDEN_AST_TYPES):
             raise ValueError(
                 f"Query contains forbidden statement type: {type(node).__name__}"
             )
-        if isinstance(node, exp.Anonymous) or isinstance(node, exp.Func):
-            func_name = (getattr(node, "name", "") or "").lower()
-            if not func_name and hasattr(node, "sql_name"):
-                func_name = node.sql_name().lower()
-            if func_name in _BLOCKED_FUNC_NAMES:
+        if isinstance(node, exp.Func):
+            # For Anonymous (unknown) functions, node.name holds the actual
+            # function name.  For typed nodes (e.g. ReadCSV), sql_name()
+            # returns the canonical SQL form ("READ_CSV").
+            if isinstance(node, exp.Anonymous):
+                func_name = (getattr(node, "name", "") or "").lower()
+            else:
+                func_name = node.sql_name().lower() if hasattr(node, "sql_name") else ""
+            if not func_name:
+                func_name = (getattr(node, "name", "") or "").lower()
+            # Normalize underscores for matching (read_csv vs readcsv)
+            func_key = func_name.replace("_", "")
+            if func_name in _BLOCKED_FUNC_NAMES or func_key in _BLOCKED_FUNC_KEYS:
                 raise ValueError(f"Query contains blocked function: {func_name}")
 
 
