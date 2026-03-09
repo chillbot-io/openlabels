@@ -16,6 +16,7 @@ from typing import Any
 
 import yaml
 
+from openlabels.core.entity_domains import EntityDomain
 from openlabels.core.policies.schema import (
     DataSubjectRights,
     HandlingRequirements,
@@ -27,6 +28,8 @@ from openlabels.core.policies.schema import (
 )
 
 logger = logging.getLogger(__name__)
+
+_VALID_DOMAIN_VALUES: frozenset[str] = frozenset(d.value for d in EntityDomain)
 
 
 # Built-in Policy Packs
@@ -63,6 +66,13 @@ def _create_hipaa_phi() -> PolicyPack:
                 ["email", "diagnosis"],
                 ["phone", "diagnosis"],
                 ["address", "diagnosis"],
+            ],
+            # Domain triggers: PHI requires linkage to an individual,
+            # so we use combinations (not domain_any_of which would fire
+            # on standalone clinical context like a bare diagnosis code).
+            domain_combinations=[
+                ["identifier", "medical"],
+                ["contact", "medical"],
             ],
             min_confidence=0.7,
         ),
@@ -154,6 +164,13 @@ def _create_pci_dss() -> PolicyPack:
                 ["credit_card_number", "cvv"],
                 ["bank_account", "routing_number"],
                 ["iban", "bic"],
+            ],
+            # Domain triggers: PCI-DSS is specific to payment cards,
+            # not all financial entities (CUSIP, ISIN, etc.), so we
+            # use identifier+financial combinations rather than a
+            # broad domain_any_of.
+            domain_combinations=[
+                ["identifier", "financial"],
             ],
             min_confidence=0.8,
         ),
@@ -334,6 +351,10 @@ def _create_glba() -> PolicyPack:
                 ["person_name", "credit_score"],
                 ["person_name", "loan_amount"],
             ],
+            # Domain trigger: identifier + financial combination
+            domain_combinations=[
+                ["identifier", "financial"],
+            ],
             min_confidence=0.7,
         ),
         handling=HandlingRequirements(
@@ -415,6 +436,8 @@ def _create_credentials() -> PolicyPack:
                 "encryption_key",
                 "client_secret",
             ],
+            # Domain trigger: any entity tagged CREDENTIAL
+            domain_any_of=["credential"],
             min_confidence=0.8,
         ),
         handling=HandlingRequirements(
@@ -471,6 +494,12 @@ def _create_soc2() -> PolicyPack:
                 ["person_name", "credit_card"],
                 ["email", "ssn"],
             ],
+            # Domain triggers: any credential is a SOC2 concern;
+            # financial data needs identifier context to be relevant.
+            domain_any_of=["credential"],
+            domain_combinations=[
+                ["identifier", "financial"],
+            ],
             min_confidence=0.7,
         ),
         handling=HandlingRequirements(
@@ -510,12 +539,34 @@ def load_builtin_policies() -> list[PolicyPack]:
 
 
 # YAML/JSON Loader
+def _validate_domain_strings(domains: list[str], field_name: str) -> None:
+    """Warn on invalid domain strings in trigger config."""
+    for d in domains:
+        if d not in _VALID_DOMAIN_VALUES:
+            logger.warning(
+                "Unknown domain %r in %s; valid domains: %s",
+                d, field_name, sorted(_VALID_DOMAIN_VALUES),
+            )
+
+
 def _parse_trigger(data: dict[str, Any]) -> PolicyTrigger:
     """Parse trigger configuration from dict."""
+    domain_any_of = data.get("domain_any_of", [])
+    domain_all_of = data.get("domain_all_of", [])
+    domain_combinations = data.get("domain_combinations", [])
+
+    _validate_domain_strings(domain_any_of, "domain_any_of")
+    _validate_domain_strings(domain_all_of, "domain_all_of")
+    for combo in domain_combinations:
+        _validate_domain_strings(combo, "domain_combinations")
+
     return PolicyTrigger(
         any_of=data.get("any_of", []),
         all_of=data.get("all_of", []),
         combinations=data.get("combinations", []),
+        domain_any_of=domain_any_of,
+        domain_all_of=domain_all_of,
+        domain_combinations=domain_combinations,
         min_confidence=data.get("min_confidence", 0.5),
         min_count=data.get("min_count", 1),
         exclude_if_only=data.get("exclude_if_only", []),

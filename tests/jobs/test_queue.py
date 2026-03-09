@@ -9,12 +9,6 @@ Tests focus on:
 - Queue statistics
 """
 
-import os
-import sys
-
-# Add src to path for direct import
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4

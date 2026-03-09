@@ -54,6 +54,9 @@ def _count_rules(config: dict) -> int:
     count += len(triggers.get("any_of", []))
     count += len(triggers.get("all_of", []))
     count += len(triggers.get("combinations", []))
+    count += len(triggers.get("domain_any_of", []))
+    count += len(triggers.get("domain_all_of", []))
+    count += len(triggers.get("domain_combinations", []))
     return count
 
 
@@ -64,8 +67,12 @@ def _count_rules(config: dict) -> int:
 class PolicyRuleResponse(BaseModel):
     """Individual policy rule extracted from config triggers."""
 
-    type: str = Field(..., description="Rule type: any_of, all_of, or combination")
-    entities: list[str] = Field(default_factory=list, description="Entity types involved")
+    type: str = Field(
+        ...,
+        description="Rule type: any_of, all_of, combination, "
+                    "domain_any_of, domain_all_of, or domain_combination",
+    )
+    entities: list[str] = Field(default_factory=list, description="Entity types or domain names involved")
     min_confidence: float | None = None
     min_count: int | None = None
 
@@ -99,6 +106,31 @@ def _extract_rules(config: dict) -> list[PolicyRuleResponse]:
     for combo in triggers.get("combinations", []):
         rules.append(PolicyRuleResponse(
             type="combination",
+            entities=combo,
+            min_confidence=min_confidence,
+            min_count=min_count,
+        ))
+
+    # Domain-based triggers
+    for domain in triggers.get("domain_any_of", []):
+        rules.append(PolicyRuleResponse(
+            type="domain_any_of",
+            entities=[domain],
+            min_confidence=min_confidence,
+            min_count=min_count,
+        ))
+
+    if triggers.get("domain_all_of"):
+        rules.append(PolicyRuleResponse(
+            type="domain_all_of",
+            entities=triggers["domain_all_of"],
+            min_confidence=min_confidence,
+            min_count=min_count,
+        ))
+
+    for combo in triggers.get("domain_combinations", []):
+        rules.append(PolicyRuleResponse(
+            type="domain_combination",
             entities=combo,
             min_confidence=min_confidence,
             min_count=min_count,
@@ -288,6 +320,9 @@ class RulesResponse(BaseModel):
     any_of: list[str] = Field(default_factory=list)
     all_of: list[str] = Field(default_factory=list)
     combinations: list[list[str]] = Field(default_factory=list)
+    domain_any_of: list[str] = Field(default_factory=list)
+    domain_all_of: list[str] = Field(default_factory=list)
+    domain_combinations: list[list[str]] = Field(default_factory=list)
     min_confidence: float = 0.5
     min_count: int = 1
     exclude_if_only: list[str] = Field(default_factory=list)
@@ -299,6 +334,9 @@ class RulesUpdate(BaseModel):
     any_of: list[str] | None = None
     all_of: list[str] | None = None
     combinations: list[list[str]] | None = None
+    domain_any_of: list[str] | None = None
+    domain_all_of: list[str] | None = None
+    domain_combinations: list[list[str]] | None = None
     min_confidence: float | None = None
     min_count: int | None = None
     exclude_if_only: list[str] | None = None
@@ -651,6 +689,21 @@ async def export_policy(
     )
 
 
+def _rules_response(triggers: dict) -> RulesResponse:
+    """Build a RulesResponse from a triggers dict."""
+    return RulesResponse(
+        any_of=triggers.get("any_of", []),
+        all_of=triggers.get("all_of", []),
+        combinations=triggers.get("combinations", []),
+        domain_any_of=triggers.get("domain_any_of", []),
+        domain_all_of=triggers.get("domain_all_of", []),
+        domain_combinations=triggers.get("domain_combinations", []),
+        min_confidence=triggers.get("min_confidence", 0.5),
+        min_count=triggers.get("min_count", 1),
+        exclude_if_only=triggers.get("exclude_if_only", []),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Rule builder
 # ---------------------------------------------------------------------------
@@ -664,14 +717,7 @@ async def get_policy_rules(
     """Get the trigger rules for a policy."""
     policy = await svc.get_policy(policy_id)
     triggers = (policy.config or {}).get("triggers", {})
-    return RulesResponse(
-        any_of=triggers.get("any_of", []),
-        all_of=triggers.get("all_of", []),
-        combinations=triggers.get("combinations", []),
-        min_confidence=triggers.get("min_confidence", 0.5),
-        min_count=triggers.get("min_count", 1),
-        exclude_if_only=triggers.get("exclude_if_only", []),
-    )
+    return _rules_response(triggers)
 
 
 @router.put("/{policy_id}/rules", response_model=RulesResponse)
@@ -700,14 +746,7 @@ async def update_policy_rules(
     )
 
     await svc.commit()
-    return RulesResponse(
-        any_of=triggers.get("any_of", []),
-        all_of=triggers.get("all_of", []),
-        combinations=triggers.get("combinations", []),
-        min_confidence=triggers.get("min_confidence", 0.5),
-        min_count=triggers.get("min_count", 1),
-        exclude_if_only=triggers.get("exclude_if_only", []),
-    )
+    return _rules_response(triggers)
 
 
 # ---------------------------------------------------------------------------
@@ -739,14 +778,7 @@ async def update_combinations(
     )
 
     await svc.commit()
-    return RulesResponse(
-        any_of=triggers.get("any_of", []),
-        all_of=triggers.get("all_of", []),
-        combinations=triggers.get("combinations", []),
-        min_confidence=triggers.get("min_confidence", 0.5),
-        min_count=triggers.get("min_count", 1),
-        exclude_if_only=triggers.get("exclude_if_only", []),
-    )
+    return _rules_response(triggers)
 
 
 # ---------------------------------------------------------------------------

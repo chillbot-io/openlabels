@@ -178,6 +178,11 @@ class AuthSettings(BaseSettings):
     # Env: OPENLABELS_AUTH__ADMIN_EMAILS='["alice@co.com","bob@co.com"]'
     admin_emails: list[str] = Field(default_factory=list)
 
+    # Maximum age (hours) for a refresh token before forcing re-login.
+    # Limits the window of exposure if a refresh token is compromised.
+    # Set to 0 to disable (not recommended for production).
+    refresh_token_max_lifetime_hours: int = 24
+
     # Fernet key for encrypting tokens at rest in the session table.
     # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     # If not set, tokens are stored in plaintext (a warning is logged on startup).
@@ -357,6 +362,21 @@ class DetectionSettings(BaseSettings):
     agent_pool_enabled: bool = True  # Use multi-process agent pool when ML is enabled
 
 
+class NLQuerySettings(BaseSettings):
+    """Natural-language query (AI) provider keys.
+
+    Used by the /query endpoint to translate natural-language questions
+    into DuckDB SQL.  At least one key must be set for the feature to work.
+
+    Env:
+        OPENLABELS_NL_QUERY__ANTHROPIC_API_KEY=sk-ant-...
+        OPENLABELS_NL_QUERY__OPENAI_API_KEY=sk-...
+    """
+
+    anthropic_api_key: SecretStr | None = None
+    openai_api_key: SecretStr | None = None
+
+
 class LoggingSettings(BaseSettings):
     """Logging configuration."""
 
@@ -437,6 +457,11 @@ class SecuritySettings(BaseSettings):
     """Security middleware configuration."""
 
     max_request_size_mb: int = 50  # Max request body size (aligned with upload limit)
+
+    # Bearer token for the /metrics endpoint.  Required in production/staging
+    # to prevent unauthenticated access to Prometheus metrics.
+    # Env: OPENLABELS_SECURITY__METRICS_TOKEN
+    metrics_token: SecretStr | None = None
 
 
 class TimeoutSettings(BaseSettings):
@@ -876,6 +901,7 @@ class Settings(BaseSettings):
     adapters: AdapterSettings = Field(default_factory=AdapterSettings)
     labeling: LabelingSettings = Field(default_factory=LabelingSettings)
     detection: DetectionSettings = Field(default_factory=DetectionSettings)
+    nl_query: NLQuerySettings = Field(default_factory=NLQuerySettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     cors: CORSSettings = Field(default_factory=CORSSettings)
     rate_limit: RateLimitSettings = Field(default_factory=RateLimitSettings)
@@ -919,6 +945,19 @@ class Settings(BaseSettings):
                 "CORS allowed_origins contains only localhost origins in "
                 f"{self.server.environment} with allow_credentials=True. "
                 "Configure real origin URLs or set allow_credentials=False."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_production_auth_provider(self) -> Settings:
+        """Reject auth provider 'none' in production/staging environments."""
+        if (
+            self.server.environment in ("production", "staging")
+            and self.auth.provider == "none"
+        ):
+            raise ValueError(
+                "AUTH provider cannot be 'none' in production/staging. "
+                "Set OPENLABELS_AUTH__PROVIDER to 'oidc' or 'azure_ad'."
             )
         return self
 

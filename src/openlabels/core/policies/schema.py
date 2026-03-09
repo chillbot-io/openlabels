@@ -64,22 +64,30 @@ class PolicyTrigger:
     """
     Defines when a policy is triggered.
 
-    Supports:
+    Supports entity-type triggers (legacy, still fully supported):
     - any_of: Triggered if ANY of these entity types are present
     - all_of: Triggered only if ALL of these entity types are present
     - combinations: List of all_of conditions (OR between them)
-    - min_confidence: Minimum confidence threshold for matches
-    - min_count: Minimum number of matches required
+
+    And domain-based triggers (new, composable):
+    - domain_any_of: Triggered if ANY of these domains are detected
+    - domain_all_of: Triggered only if ALL of these domains are detected
+    - domain_combinations: List of domain all_of conditions (OR between them)
+
+    Domain triggers evaluate against the EntityDomain tags derived from
+    detected entity types.  A policy fires if ANY trigger type matches
+    (entity OR domain triggers).
     """
 
-    # Simple triggers - any single entity type
+    # Entity-type triggers
     any_of: list[str] = field(default_factory=list)
-
-    # Combination triggers - all must be present
     all_of: list[str] = field(default_factory=list)
-
-    # Multiple combination options (OR between combinations)
     combinations: list[list[str]] = field(default_factory=list)
+
+    # Domain-based triggers
+    domain_any_of: list[str] = field(default_factory=list)
+    domain_all_of: list[str] = field(default_factory=list)
+    domain_combinations: list[list[str]] = field(default_factory=list)
 
     # Thresholds
     min_confidence: float = 0.5
@@ -90,7 +98,14 @@ class PolicyTrigger:
 
     def is_empty(self) -> bool:
         """Check if trigger has no conditions."""
-        return not self.any_of and not self.all_of and not self.combinations
+        return (
+            not self.any_of
+            and not self.all_of
+            and not self.combinations
+            and not self.domain_any_of
+            and not self.domain_all_of
+            and not self.domain_combinations
+        )
 
 
 @dataclass

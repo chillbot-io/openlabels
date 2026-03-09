@@ -158,9 +158,12 @@ def _register_root_endpoints(app: FastAPI) -> None:
         _settings = get_settings()
         # S13: Bearer token authentication for metrics endpoint.
         # In production/staging, a metrics token MUST be configured.
-        metrics_token = os.environ.get("OPENLABELS_METRICS_TOKEN")
+        metrics_token = (
+            _settings.security.metrics_token.get_secret_value()
+            if _settings.security.metrics_token else None
+        )
         if _settings.server.environment in ("production", "staging") and not metrics_token:
-            return JSONResponse(status_code=403, content={"error": "OPENLABELS_METRICS_TOKEN not configured"})
+            return JSONResponse(status_code=403, content={"error": "OPENLABELS_SECURITY__METRICS_TOKEN not configured"})
         if metrics_token:
             auth_header = request.headers.get("Authorization", "")
             expected = f"Bearer {metrics_token}"

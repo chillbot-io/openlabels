@@ -304,7 +304,7 @@ class ScanJob(Base):
     # Relationships
     tenant: Mapped[Tenant] = relationship(back_populates="scan_jobs")
     schedule: Mapped[Optional[ScanSchedule]] = relationship(back_populates="jobs")
-    results: Mapped[list[ScanResult]] = relationship(back_populates="job")
+    results: Mapped[list[ScanResult]] = relationship(back_populates="job", lazy="noload")
     partitions: Mapped[list[ScanPartition]] = relationship(back_populates="job")
 
     __table_args__ = (
@@ -633,7 +633,9 @@ class FileInventory(Base):
     owner: Mapped[str | None] = mapped_column(String(255))
 
     # Label tracking
-    current_label_id: Mapped[str | None] = mapped_column(String(36))
+    current_label_id: Mapped[str | None] = mapped_column(
+        ForeignKey("sensitivity_labels.id", ondelete="SET NULL"),
+    )
     current_label_name: Mapped[str | None] = mapped_column(String(255))
     label_applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

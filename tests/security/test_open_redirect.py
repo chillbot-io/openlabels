@@ -173,7 +173,7 @@ class TestOpenRedirectIntegration:
                     assert "evil.com" not in location, \
                         "Login endpoint allowed redirect to external site"
         finally:
-            app.dependency_overrides.pop(get_session, None)
+            app.dependency_overrides.clear()
             app_limiter.enabled = original_app
             auth_limiter.enabled = original_auth
 
@@ -221,6 +221,6 @@ class TestOpenRedirectIntegration:
                     assert "evil.com" not in location, \
                         "Callback allowed attacker to override redirect"
         finally:
-            app.dependency_overrides.pop(get_session, None)
+            app.dependency_overrides.clear()
             app_limiter.enabled = original_app
             auth_limiter.enabled = original_auth

@@ -11,14 +11,13 @@ Tests cover:
 import pytest
 
 from openlabels.core.detectors.gliner_label_selector import (
-    _MIN_LABELS,
-    ContentCategory,
     profile_content,
 )
+from openlabels.core.entity_domains import EntityDomain
 
 
 class TestContentProfiling:
-    """Test that keyword heuristics activate the right categories."""
+    """Test that keyword heuristics activate the right domains."""
 
     def test_medical_document(self):
         text = (
@@ -28,8 +27,7 @@ class TestContentProfiling:
             "Chief complaint: elevated blood sugar\n"
         )
         profile = profile_content(text)
-        assert ContentCategory.MEDICAL in profile.categories
-        assert ContentCategory.GENERAL in profile.categories
+        assert EntityDomain.MEDICAL in profile.categories
 
     def test_financial_document(self):
         text = (
@@ -39,7 +37,7 @@ class TestContentProfiling:
             "IBAN: DE89370400440532013000\n"
         )
         profile = profile_content(text)
-        assert ContentCategory.FINANCIAL in profile.categories
+        assert EntityDomain.FINANCIAL in profile.categories
 
     def test_personal_id_document(self):
         text = (
@@ -49,7 +47,7 @@ class TestContentProfiling:
             "Date of birth: 01/15/1990\n"
         )
         profile = profile_content(text)
-        assert ContentCategory.PERSONAL_ID in profile.categories
+        assert EntityDomain.IDENTIFIER in profile.categories
 
     def test_technical_document(self):
         text = (
@@ -59,7 +57,7 @@ class TestContentProfiling:
             "DATABASE_URL=postgres://user:PASSWORD@host/db\n"
         )
         profile = profile_content(text)
-        assert ContentCategory.TECHNICAL in profile.categories
+        assert EntityDomain.CREDENTIAL in profile.categories
 
     def test_government_document(self):
         text = (
@@ -68,7 +66,7 @@ class TestContentProfiling:
             "CAGE Code: 1ABC2\n"
         )
         profile = profile_content(text)
-        assert ContentCategory.GOVERNMENT in profile.categories
+        assert EntityDomain.GOVERNMENT in profile.categories
 
     def test_contact_document(self):
         text = (
@@ -79,7 +77,18 @@ class TestContentProfiling:
             "City: Springfield, State: IL, Zip: 62701\n"
         )
         profile = profile_content(text)
-        assert ContentCategory.CONTACT in profile.categories
+        assert EntityDomain.CONTACT in profile.categories
+
+    def test_vehicle_domain(self):
+        text = (
+            "Vehicle Identification Number: 1HGBH41JXMN109186\n"
+            "License plate: ABC-1234\n"
+            "DMV registration number on file\n"
+            "Odometer reading: 45,230 miles\n"
+        )
+        profile = profile_content(text)
+        assert EntityDomain.VEHICLE in profile.categories
+        assert "vehicle identification number" in profile.selected_labels
 
     def test_combined_medical_financial(self):
         text = (
@@ -91,37 +100,37 @@ class TestContentProfiling:
             "Invoice total: $12,500 USD\n"
         )
         profile = profile_content(text)
-        assert ContentCategory.MEDICAL in profile.categories
-        assert ContentCategory.FINANCIAL in profile.categories
+        assert EntityDomain.MEDICAL in profile.categories
+        assert EntityDomain.FINANCIAL in profile.categories
 
-    def test_general_always_active(self):
+    def test_base_labels_always_included(self):
         text = "Hello world, this is just plain text."
         profile = profile_content(text)
-        assert ContentCategory.GENERAL in profile.categories
+        # Base labels are always selected regardless of detected domains
+        assert "person name" in profile.selected_labels
 
-    def test_plain_text_no_extra_categories(self):
+    def test_plain_text_no_domains(self):
         text = "The quick brown fox jumps over the lazy dog."
         profile = profile_content(text)
-        # Only GENERAL should be active
-        non_general = profile.categories & ~ContentCategory.GENERAL
-        assert not non_general
+        # No domains should be active for plain text
+        assert len(profile.categories) == 0
 
 
 class TestLabelSelection:
-    """Test that the correct labels are selected for each category."""
+    """Test that the correct labels are selected for each domain."""
 
-    def test_general_labels_always_present(self):
+    def test_base_labels_always_present(self):
         text = "Some generic text with no PII keywords at all."
         profile = profile_content(text)
-        # GENERAL labels should always be present (focused set for GLiNER)
+        # Base labels should always be present (focused set for GLiNER)
         assert "person name" in profile.selected_labels
         assert "first name" in profile.selected_labels
         assert "date of birth" in profile.selected_labels
-        # company/job are NOT in GENERAL — they're not PII and
+        # company/job are NOT in base labels — they're not PII and
         # were removed to free GLiNER's attention budget for real PII.
         assert "company name" not in profile.selected_labels
         assert "job title" not in profile.selected_labels
-        # email/phone are NOT in GENERAL — they're in CONTACT category
+        # email/phone are NOT in base labels — they're in CONTACT domain
         # because pattern detectors already handle them reliably
         assert "email address" not in profile.selected_labels
 
@@ -162,23 +171,16 @@ class TestLabelSelection:
 
 
 class TestFallbackBehavior:
-    """Test fallback to all labels when too few are selected."""
+    """Test that base labels are always present even for empty/whitespace text."""
 
-    def test_minimum_label_count(self):
-        # Any profile should have at least _MIN_LABELS labels
-        text = ""
-        profile = profile_content(text)
-        assert len(profile.selected_labels) >= _MIN_LABELS
-
-    def test_empty_text_gets_general_labels(self):
+    def test_empty_text_gets_base_labels(self):
         profile = profile_content("")
-        # Only GENERAL active, but its 7 labels >= _MIN_LABELS
-        assert len(profile.selected_labels) >= _MIN_LABELS
+        assert len(profile.selected_labels) >= 14  # base labels count
         assert "person name" in profile.selected_labels
 
-    def test_whitespace_text_gets_general_labels(self):
+    def test_whitespace_text_gets_base_labels(self):
         profile = profile_content("   \n\t  ")
-        assert len(profile.selected_labels) >= _MIN_LABELS
+        assert len(profile.selected_labels) >= 14
         assert "person name" in profile.selected_labels
 
 
@@ -191,13 +193,74 @@ class TestSampling:
         text = ("x" * 100) + medical_keywords
         # With sample_size=50, the keywords are outside the sample
         profile = profile_content(text, sample_size=50)
-        assert ContentCategory.MEDICAL not in profile.categories
+        assert EntityDomain.MEDICAL not in profile.categories
 
     def test_default_sample_size_covers_headers(self):
         # Keywords in the first 5000 chars should be detected
         text = "Patient diagnosis medication hospital clinical" + ("x" * 10000)
         profile = profile_content(text)
-        assert ContentCategory.MEDICAL in profile.categories
+        assert EntityDomain.MEDICAL in profile.categories
+
+
+class TestNegativeLabelSelection:
+    """Verify domain-specific labels are ABSENT when that domain is inactive."""
+
+    def test_medical_labels_absent_for_financial_text(self):
+        text = (
+            "Bank account statement showing wire transfer of $10,000.\n"
+            "IBAN: DE89370400440532013000\n"
+            "Payment received via credit card.\n"
+        )
+        profile = profile_content(text)
+        assert EntityDomain.FINANCIAL in profile.categories
+        assert EntityDomain.MEDICAL not in profile.categories
+        # Medical-specific labels should NOT be present
+        assert "medical record number" not in profile.selected_labels
+        assert "health plan number" not in profile.selected_labels
+        assert "npi number" not in profile.selected_labels
+
+    def test_financial_labels_absent_for_medical_text(self):
+        text = (
+            "Patient admitted with chief complaint of chest pain.\n"
+            "Diagnosis: Acute myocardial infarction.\n"
+            "Medication: Aspirin 325mg, Heparin drip.\n"
+        )
+        profile = profile_content(text)
+        assert EntityDomain.MEDICAL in profile.categories
+        assert EntityDomain.FINANCIAL not in profile.categories
+        # Financial-specific labels should NOT be present
+        assert "credit card number" not in profile.selected_labels
+        assert "bank account number" not in profile.selected_labels
+        assert "iban" not in profile.selected_labels
+
+    def test_credential_labels_absent_for_plain_text(self):
+        text = "The quick brown fox jumps over the lazy dog."
+        profile = profile_content(text)
+        assert EntityDomain.CREDENTIAL not in profile.categories
+        assert "api key" not in profile.selected_labels
+        assert "ip address" not in profile.selected_labels
+
+    def test_vehicle_labels_absent_for_medical_text(self):
+        text = (
+            "Patient diagnosis: Type 2 Diabetes.\n"
+            "Medication: Metformin 500mg.\n"
+            "Hospital: Springfield General.\n"
+        )
+        profile = profile_content(text)
+        assert EntityDomain.VEHICLE not in profile.categories
+        assert "vehicle identification number" not in profile.selected_labels
+        assert "license plate number" not in profile.selected_labels
+
+    def test_government_labels_absent_for_contact_text(self):
+        text = (
+            "Contact Directory\n"
+            "Phone: (555) 123-4567\n"
+            "Email: john@example.com\n"
+            "Address: 123 Main Street\n"
+        )
+        profile = profile_content(text)
+        assert EntityDomain.GOVERNMENT not in profile.categories
+        assert "unique identifier" not in profile.selected_labels
 
 
 class TestContentProfile:
@@ -213,4 +276,9 @@ class TestContentProfile:
         text = "test"
         profile = profile_content(text)
         with pytest.raises(AttributeError):
-            profile.categories = ContentCategory.GENERAL  # type: ignore[misc]
+            profile.categories = frozenset()  # type: ignore[misc]
+
+    def test_categories_is_frozenset(self):
+        text = "Patient diagnosis medication"
+        profile = profile_content(text)
+        assert isinstance(profile.categories, frozenset)

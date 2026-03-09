@@ -913,7 +913,9 @@ async def _generate_sql(
 
     Returns (sql, explanation) tuple.
     """
-    import os
+    from openlabels.server.config import get_settings
+
+    settings = get_settings()
 
     system_prompt = f"""You are a SQL query assistant for OpenLabels, a data classification platform.
 Generate DuckDB-compatible SQL queries based on user questions.
@@ -931,17 +933,24 @@ Rules:
     user_prompt = f"Question: {question}\n\nGenerate a DuckDB SQL query to answer this question."
 
     # Try Anthropic first
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    anthropic_key = (
+        settings.nl_query.anthropic_api_key.get_secret_value()
+        if settings.nl_query.anthropic_api_key else None
+    )
     if anthropic_key:
         return await _call_anthropic(system_prompt, user_prompt, anthropic_key)
 
     # Try OpenAI
-    openai_key = os.environ.get("OPENAI_API_KEY")
+    openai_key = (
+        settings.nl_query.openai_api_key.get_secret_value()
+        if settings.nl_query.openai_api_key else None
+    )
     if openai_key:
         return await _call_openai(system_prompt, user_prompt, openai_key)
 
     raise RuntimeError(
-        "No AI provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY environment variable."
+        "No AI provider configured. Set OPENLABELS_NL_QUERY__ANTHROPIC_API_KEY or "
+        "OPENLABELS_NL_QUERY__OPENAI_API_KEY environment variable."
     )
 
 

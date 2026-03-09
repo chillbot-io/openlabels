@@ -67,7 +67,7 @@ FK_FIXES = [
     # remediation_actions (no created_by FK; performed_by is a plain string)
     ("remediation_actions", "remediation_actions_tenant_id_fkey", "tenant_id", "tenants.id", "CASCADE"),
     ("remediation_actions", "remediation_actions_file_inventory_id_fkey", "file_inventory_id", "file_inventory.id", "SET NULL"),
-    ("remediation_actions", "remediation_actions_rollback_of_id_fkey", "rollback_of_id", "remediation_actions.id", "CASCADE"),
+    ("remediation_actions", "remediation_actions_rollback_of_id_fkey", "rollback_of_id", "remediation_actions.id", "SET NULL"),
     # monitored_files
     ("monitored_files", "monitored_files_tenant_id_fkey", "tenant_id", "tenants.id", "CASCADE"),
     ("monitored_files", "monitored_files_file_inventory_id_fkey", "file_inventory_id", "file_inventory.id", "SET NULL"),
@@ -122,13 +122,24 @@ def upgrade() -> None:
     # 2. Fix file_inventory.last_scan_job_id to be nullable (required for SET NULL ondelete)
     op.alter_column('file_inventory', 'last_scan_job_id', nullable=True)
 
-    # 3. Add tenant_settings.adapter_defaults JSONB column
+    # 3. Add missing FK from file_inventory.current_label_id to sensitivity_labels
+    op.create_foreign_key(
+        "file_inventory_current_label_id_fkey",
+        "file_inventory", "sensitivity_labels",
+        ["current_label_id"], ["id"],
+        ondelete="SET NULL",
+    )
+
+    # 4. Add tenant_settings.adapter_defaults JSONB column
     op.add_column('tenant_settings', sa.Column('adapter_defaults', postgresql.JSONB(), nullable=True))
 
 
 def downgrade() -> None:
     # Remove adapter_defaults column
     op.drop_column('tenant_settings', 'adapter_defaults')
+
+    # Drop file_inventory.current_label_id FK (added in this migration)
+    op.drop_constraint('file_inventory_current_label_id_fkey', 'file_inventory', type_='foreignkey')
 
     # Revert file_inventory.last_scan_job_id to NOT NULL
     op.alter_column('file_inventory', 'last_scan_job_id', nullable=False)

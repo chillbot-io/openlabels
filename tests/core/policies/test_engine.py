@@ -432,3 +432,301 @@ handling:
         assert policy.risk_level == RiskLevel.MEDIUM
         assert policy.triggers.min_confidence == 0.7
         assert policy.handling.encryption_required
+
+
+# ============================================================================
+# Domain Trigger Tests
+# ============================================================================
+
+class TestDomainTriggers:
+    """Test domain-based policy trigger evaluation."""
+
+    def test_domain_any_of_fires(self, engine: PolicyEngine):
+        """domain_any_of triggers when detected entity has matching domain."""
+        policy = PolicyPack(
+            name="Medical Policy",
+            triggers=PolicyTrigger(domain_any_of=["medical"]),
+            risk_level=RiskLevel.HIGH,
+        )
+        engine.add_policy(policy)
+
+        # MRN has domain {IDENTIFIER, MEDICAL}
+        entities = [make_entity("mrn", "MRN123")]
+        result = engine.evaluate(entities)
+
+        assert result.is_sensitive
+        assert result.matches[0].trigger_type == "domain_any_of"
+        assert "mrn" in result.matches[0].matched_entities
+
+    def test_domain_any_of_no_match(self, engine: PolicyEngine):
+        """domain_any_of does not fire when no entity has matching domain."""
+        policy = PolicyPack(
+            name="Medical Policy",
+            triggers=PolicyTrigger(domain_any_of=["medical"]),
+        )
+        engine.add_policy(policy)
+
+        # EMAIL has domain {CONTACT}, no MEDICAL
+        entities = [make_entity("email", "test@example.com")]
+        result = engine.evaluate(entities)
+
+        assert not result.is_sensitive
+
+    def test_domain_all_of_requires_all_domains(self, engine: PolicyEngine):
+        """domain_all_of fires only when all listed domains are present."""
+        policy = PolicyPack(
+            name="Financial Identity",
+            triggers=PolicyTrigger(domain_all_of=["identifier", "financial"]),
+        )
+        engine.add_policy(policy)
+
+        # CREDIT_CARD has {IDENTIFIER, FINANCIAL} — both present
+        entities = [make_entity("credit_card", "4111111111111111")]
+        result = engine.evaluate(entities)
+        assert result.is_sensitive
+        assert result.matches[0].trigger_type == "domain_all_of"
+
+    def test_domain_all_of_partial_no_match(self, engine: PolicyEngine):
+        """domain_all_of does not fire with only some domains present."""
+        policy = PolicyPack(
+            name="Medical+Financial",
+            triggers=PolicyTrigger(domain_all_of=["medical", "financial"]),
+        )
+        engine.add_policy(policy)
+
+        # Only MEDICAL domain (no FINANCIAL)
+        entities = [make_entity("mrn", "MRN123")]
+        result = engine.evaluate(entities)
+        assert not result.is_sensitive
+
+    def test_domain_all_of_across_entities(self, engine: PolicyEngine):
+        """domain_all_of can be satisfied by domains from different entities."""
+        policy = PolicyPack(
+            name="Medical+Contact",
+            triggers=PolicyTrigger(domain_all_of=["medical", "contact"]),
+        )
+        engine.add_policy(policy)
+
+        # mrn → {IDENTIFIER, MEDICAL}, email → {CONTACT}
+        entities = [
+            make_entity("mrn", "MRN123"),
+            make_entity("email", "test@example.com"),
+        ]
+        result = engine.evaluate(entities)
+        assert result.is_sensitive
+        assert result.matches[0].trigger_type == "domain_all_of"
+
+    def test_domain_combinations_or_logic(self, engine: PolicyEngine):
+        """domain_combinations are OR'd together."""
+        policy = PolicyPack(
+            name="Combo Policy",
+            triggers=PolicyTrigger(
+                domain_combinations=[
+                    ["medical", "contact"],
+                    ["credential", "network"],
+                ],
+            ),
+        )
+        engine.add_policy(policy)
+
+        # First combo: medical + contact
+        entities = [
+            make_entity("mrn", "MRN123"),
+            make_entity("email", "test@example.com"),
+        ]
+        result = engine.evaluate(entities)
+        assert result.is_sensitive
+        assert result.matches[0].trigger_type == "domain_combination"
+
+    def test_domain_combinations_second_combo_fires(self, engine: PolicyEngine):
+        """Second domain_combination fires when first does not match."""
+        policy = PolicyPack(
+            name="Combo Policy",
+            triggers=PolicyTrigger(
+                domain_combinations=[
+                    ["medical", "financial"],  # Won't match
+                    ["credential", "network"],  # Will match
+                ],
+            ),
+        )
+        engine.add_policy(policy)
+
+        # ip_address has {NETWORK}, password has {CREDENTIAL}
+        entities = [
+            make_entity("ip_address", "192.168.1.1"),
+            make_entity("password", "secret123"),
+        ]
+        result = engine.evaluate(entities)
+        assert result.is_sensitive
+        assert result.matches[0].trigger_type == "domain_combination"
+
+    def test_domain_trigger_respects_confidence(self, engine: PolicyEngine):
+        """Domain triggers respect min_confidence threshold."""
+        policy = PolicyPack(
+            name="High Confidence Medical",
+            triggers=PolicyTrigger(
+                domain_any_of=["medical"],
+                min_confidence=0.8,
+            ),
+        )
+        engine.add_policy(policy)
+
+        # Low confidence → should not fire
+        entities = [make_entity("mrn", "MRN123", confidence=0.5)]
+        result = engine.evaluate(entities)
+        assert not result.is_sensitive
+
+        # High confidence → should fire
+        entities = [make_entity("mrn", "MRN123", confidence=0.9)]
+        result = engine.evaluate(entities)
+        assert result.is_sensitive
+
+    def test_entity_triggers_take_precedence(self, engine: PolicyEngine):
+        """Entity triggers are checked before domain triggers."""
+        policy = PolicyPack(
+            name="Dual Trigger",
+            triggers=PolicyTrigger(
+                any_of=["ssn"],
+                domain_any_of=["medical"],
+            ),
+        )
+        engine.add_policy(policy)
+
+        # SSN fires via entity trigger (any_of), not domain trigger
+        entities = [make_entity("ssn", "123-45-6789")]
+        result = engine.evaluate(entities)
+        assert result.is_sensitive
+        assert result.matches[0].trigger_type == "any_of"
+
+    def test_domain_trigger_fires_when_entity_trigger_misses(self, engine: PolicyEngine):
+        """Domain trigger catches entities not in the entity trigger list."""
+        policy = PolicyPack(
+            name="Credential Policy",
+            triggers=PolicyTrigger(
+                any_of=["some_specific_key"],  # Not in test data
+                domain_any_of=["credential"],  # Catches all credentials
+            ),
+        )
+        engine.add_policy(policy)
+
+        # PASSWORD has CREDENTIAL domain, caught by domain trigger
+        entities = [make_entity("password", "secret123")]
+        result = engine.evaluate(entities)
+        assert result.is_sensitive
+        assert result.matches[0].trigger_type == "domain_any_of"
+
+    def test_domain_trigger_unknown_domain_ignored(self, engine: PolicyEngine):
+        """Unknown domain names are gracefully ignored."""
+        policy = PolicyPack(
+            name="Unknown Domain",
+            triggers=PolicyTrigger(domain_any_of=["nonexistent_domain"]),
+        )
+        engine.add_policy(policy)
+
+        entities = [make_entity("ssn", "123-45-6789")]
+        result = engine.evaluate(entities)
+        assert not result.is_sensitive
+
+    def test_is_empty_with_domain_triggers(self):
+        """PolicyTrigger.is_empty() accounts for domain triggers."""
+        # Empty
+        assert PolicyTrigger().is_empty()
+        # Entity trigger only
+        assert not PolicyTrigger(any_of=["ssn"]).is_empty()
+        # Domain trigger only
+        assert not PolicyTrigger(domain_any_of=["medical"]).is_empty()
+        assert not PolicyTrigger(domain_all_of=["identifier", "medical"]).is_empty()
+        assert not PolicyTrigger(domain_combinations=[["medical", "contact"]]).is_empty()
+
+    def test_domain_trigger_matched_entities_are_sorted(self, engine: PolicyEngine):
+        """Domain triggers return sorted entity types for deterministic output."""
+        policy = PolicyPack(
+            name="Sort Test",
+            triggers=PolicyTrigger(domain_all_of=["medical", "contact"]),
+        )
+        engine.add_policy(policy)
+
+        entities = [
+            make_entity("email", "a@b.com"),
+            make_entity("mrn", "MRN1"),
+        ]
+        result = engine.evaluate(entities)
+        assert result.is_sensitive
+        assert result.matches[0].matched_entities == sorted(
+            result.matches[0].matched_entities
+        )
+
+
+class TestDomainTriggerLoader:
+    """Test that domain triggers parse from YAML/dict configs."""
+
+    def test_load_domain_triggers_from_dict(self):
+        from openlabels.core.policies.loader import load_policy_pack
+
+        data = {
+            "name": "Domain Policy",
+            "triggers": {
+                "domain_any_of": ["medical", "financial"],
+                "domain_all_of": ["identifier", "contact"],
+                "domain_combinations": [
+                    ["medical", "identifier"],
+                    ["credential", "network"],
+                ],
+            },
+        }
+
+        policy = load_policy_pack(data)
+        assert policy.triggers.domain_any_of == ["medical", "financial"]
+        assert policy.triggers.domain_all_of == ["identifier", "contact"]
+        assert policy.triggers.domain_combinations == [
+            ["medical", "identifier"],
+            ["credential", "network"],
+        ]
+
+    def test_load_domain_triggers_from_yaml(self):
+        from openlabels.core.policies.loader import load_policy_pack
+
+        yaml_str = """
+name: YAML Domain Policy
+triggers:
+  domain_any_of:
+    - credential
+  domain_combinations:
+    - [identifier, financial]
+  min_confidence: 0.8
+"""
+        policy = load_policy_pack(yaml_str)
+        assert policy.triggers.domain_any_of == ["credential"]
+        assert policy.triggers.domain_combinations == [["identifier", "financial"]]
+        assert policy.triggers.min_confidence == 0.8
+
+
+class TestBuiltinDomainTriggers:
+    """Verify built-in policies have domain triggers configured."""
+
+    def test_hipaa_has_domain_triggers(self, engine_with_builtins: PolicyEngine):
+        """HIPAA policy uses domain_combinations (not domain_any_of) for PHI."""
+        from openlabels.core.policies.loader import load_builtin_policies
+
+        hipaa = next(p for p in load_builtin_policies() if p.name == "HIPAA PHI")
+        # PHI requires linkage to an individual, so combinations not any_of
+        assert hipaa.triggers.domain_any_of == []
+        assert ["identifier", "medical"] in hipaa.triggers.domain_combinations
+        assert ["contact", "medical"] in hipaa.triggers.domain_combinations
+
+    def test_pci_has_domain_triggers(self, engine_with_builtins: PolicyEngine):
+        """PCI-DSS policy uses domain_combinations for financial+identifier."""
+        from openlabels.core.policies.loader import load_builtin_policies
+
+        pci = next(p for p in load_builtin_policies() if p.name == "PCI-DSS")
+        assert pci.triggers.domain_any_of == []
+        assert ["identifier", "financial"] in pci.triggers.domain_combinations
+
+    def test_credentials_has_domain_triggers(self, engine_with_builtins: PolicyEngine):
+        """Credentials policy includes domain triggers for credential entities."""
+        from openlabels.core.policies.loader import load_builtin_policies
+
+        creds = next(
+            p for p in load_builtin_policies() if p.name == "Credentials & Secrets"
+        )
+        assert "credential" in creds.triggers.domain_any_of

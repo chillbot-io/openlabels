@@ -5,12 +5,6 @@ Tests focus on security-critical paths and edge cases that could
 expose authentication bypasses or token validation issues.
 """
 
-import os
-import sys
-
-# Add src to path for direct import
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx

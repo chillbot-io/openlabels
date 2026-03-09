@@ -111,7 +111,7 @@ KNOWN_ENTITY_TYPES: frozenset[str] = frozenset([
     "GPS_COORDINATE", "GPS_COORDINATES", "LATITUDE", "LONGITUDE", "COORDINATE", "COORDINATES",
     "GPE", "LOC", "STREET_ADDRESS", "STREET", "ZIPCODE", "LOCATION_ZIP",
     "ZIP_CODE", "POSTCODE", "LOCATION_OTHER",
-    "ROOM", "ROOM_NUMBER",
+    "ROOM", "ROOM_NUMBER", "BED_NUMBER",
 
     # IDENTIFIERS - Government
     "SSN", "SSN_PARTIAL", "US_SSN", "SOCIAL_SECURITY", "SOCIALSECURITYNUMBER",
@@ -138,6 +138,7 @@ KNOWN_ENTITY_TYPES: frozenset[str] = frozenset([
     "BR_CPF", "BR_CNPJ",
     "EL_AMKA", "EL_AFM",
     "SI_EMSO", "SI_DAVCNA",
+    "AADHAAR", "TFN", "CURP", "SVNR",
 
     # IDENTIFIERS - Medical
     "MRN", "MEDICAL_RECORD", "MEDICALRECORD",
@@ -227,7 +228,7 @@ KNOWN_ENTITY_TYPES: frozenset[str] = frozenset([
 
     # MEDICAL (context-only)
     "DRUG", "MEDICATION", "LAB_TEST", "DIAGNOSIS", "PROCEDURE", "PAYER",
-    "RX_NUMBER", "PRESCRIPTION", "BLOOD_TYPE",
+    "RX_NUMBER", "PRESCRIPTION", "BLOOD_TYPE", "BMI", "AUTH_NUMBER",
 
     # FACILITY / ORGANIZATION
     "FACILITY", "HOSPITAL", "ORG", "ORGANIZATION", "VENDOR",
@@ -325,6 +326,9 @@ _ENTITY_ALIASES: dict[str, str] = {
     "ZIP_CODE": "ZIP",
     "POSTCODE": "ZIP",
     "LOCATION_ZIP": "ZIP",
+    # Temporal duplicates
+    "YEAR_OF_BIRTH": "BIRTH_YEAR",
+    "DATE_TIME": "DATETIME",
 }
 
 

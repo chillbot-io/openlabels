@@ -9,12 +9,6 @@ Tests focus on:
 - Multi-worker consistency
 """
 
-import os
-import sys
-
-# Add src to path for direct import
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
-
 import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch

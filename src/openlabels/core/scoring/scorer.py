@@ -19,6 +19,7 @@ Weights are on a 1-10 scale:
 
 import math
 
+from ..entity_domains import get_all_domains, get_max_score_multiplier
 from ..types import RiskTier, ScoringResult, normalize_entity_type
 
 # CALIBRATION PARAMETERS
@@ -86,6 +87,10 @@ ENTITY_WEIGHTS: dict[str, int] = {
     "PL_PESEL": 8,
     "KR_RRN": 8,
     "IT_FISCAL_CODE": 8,
+    "AADHAAR": 8,
+    "CURP": 8,
+    "SVNR": 8,
+    "TFN": 8,
     "ATLASSIAN_TOKEN": 9,
 
     # Elevated (6-7)
@@ -99,6 +104,8 @@ ENTITY_WEIGHTS: dict[str, int] = {
     "IN_VOTER": 7,
     "IT_VAT": 7,
     "NHS_NUMBER": 7,
+    "AUTH_NUMBER": 7,
+    "BMI": 6,
     "SOLANA_ADDRESS": 7,
     "MONERO_ADDRESS": 7,
     "GOOGLE_OAUTH_TOKEN": 7,
@@ -150,115 +157,13 @@ ENTITY_WEIGHTS: dict[str, int] = {
     "URL": 2,
 
     # Minimal (1)
+    "BED_NUMBER": 2,
     "FACILITY": 1,
     "ORGANIZATION": 1,
     "COMPANY": 1,
 }
 
 DEFAULT_WEIGHT = 5  # For unknown entity types
-
-# ENTITY CATEGORIES
-ENTITY_CATEGORIES: dict[str, str] = {
-    # Direct identifiers
-    "SSN": "direct_identifier",
-    "PASSPORT": "direct_identifier",
-    "DRIVER_LICENSE": "direct_identifier",
-    "MILITARY_ID": "direct_identifier",
-    "TAX_ID": "direct_identifier",
-    "ITIN": "direct_identifier",
-    "EIN": "direct_identifier",
-    "UK_NINO": "direct_identifier",
-    "IN_PAN": "direct_identifier",
-    "SG_NRIC_FIN": "direct_identifier",
-    "ES_NIE": "direct_identifier",
-    "ES_NIF": "direct_identifier",
-    "PL_PESEL": "direct_identifier",
-    "FI_HETU": "direct_identifier",
-    "IT_FISCAL_CODE": "direct_identifier",
-    "KR_RRN": "direct_identifier",
-    "TH_TNIN": "direct_identifier",
-    "MRN": "direct_identifier",
-    "STATE_ID": "direct_identifier",
-
-    # Health info
-    "DIAGNOSIS": "health_info",
-    "MEDICATION": "health_info",
-    "HEALTH_PLAN_ID": "health_info",
-    "NPI": "health_info",
-    "DEA": "health_info",
-    "LAB_TEST": "health_info",
-    "PROCEDURE": "health_info",
-
-    # Financial
-    "CREDIT_CARD": "financial",
-    "IBAN": "financial",
-    "SWIFT_BIC": "financial",
-    "ACCOUNT_NUMBER": "financial",
-    "CUSIP": "financial",
-    "ISIN": "financial",
-    "BITCOIN_ADDRESS": "financial",
-    "ETHEREUM_ADDRESS": "financial",
-    "CRYPTO_SEED_PHRASE": "financial",
-
-    # Contact
-    "EMAIL": "contact",
-    "PHONE": "contact",
-    "ADDRESS": "contact",
-    "ZIP": "contact",
-    "FAX": "contact",
-    "URL": "contact",
-    "USERNAME": "contact",
-
-    # Credentials
-    "PASSWORD": "credential",
-    "API_KEY": "credential",
-    "PRIVATE_KEY": "credential",
-    "JWT": "credential",
-    "AWS_ACCESS_KEY": "credential",
-    "AWS_SECRET_KEY": "credential",
-    "GITHUB_TOKEN": "credential",
-    "GITLAB_TOKEN": "credential",
-    "SLACK_TOKEN": "credential",
-    "STRIPE_KEY": "credential",
-    "DATABASE_URL": "credential",
-
-    # Quasi-identifiers
-    "NAME": "quasi_identifier",
-    "FIRSTNAME": "quasi_identifier",
-    "LASTNAME": "quasi_identifier",
-    "COMPANY": "quasi_identifier",
-    "DATE_DOB": "quasi_identifier",
-    "AGE": "quasi_identifier",
-    "DATE": "quasi_identifier",
-
-    # Direct identifier — vehicle
-    "LICENSE_PLATE": "direct_identifier",
-
-    # Classification markings
-    "CLASSIFICATION_LEVEL": "classification_marking",
-    "CLASSIFICATION_MARKING": "classification_marking",
-    "SCI_MARKING": "classification_marking",
-    "DISSEMINATION_CONTROL": "classification_marking",
-}
-
-# CO-OCCURRENCE RULES
-# (required_categories, multiplier, rule_name)
-CO_OCCURRENCE_RULES: list[tuple[set[str], float, str]] = [
-    # HIPAA: Direct ID + Health data
-    ({'direct_identifier', 'health_info'}, 2.0, 'hipaa_phi'),
-    # Identity theft: Direct ID + Financial
-    ({'direct_identifier', 'financial'}, 1.8, 'identity_theft'),
-    # Credentials always risky
-    ({'credential'}, 1.5, 'credential_exposure'),
-    # Personal + Health (even without direct ID)
-    ({'quasi_identifier', 'health_info'}, 1.5, 'phi_without_id'),
-    # Contact + Health
-    ({'contact', 'health_info'}, 1.4, 'phi_with_contact'),
-    # Full identity package
-    ({'direct_identifier', 'quasi_identifier', 'financial'}, 2.2, 'full_identity'),
-    # Classified data
-    ({'classification_marking'}, 2.5, 'classified_data'),
-]
 
 
 # SCORING FUNCTIONS
@@ -268,40 +173,13 @@ def get_weight(entity_type: str) -> int:
     return ENTITY_WEIGHTS.get(normalized, DEFAULT_WEIGHT)
 
 
-def get_category(entity_type: str) -> str:
-    """Get category for an entity type."""
-    normalized = normalize_entity_type(entity_type)
-    return ENTITY_CATEGORIES.get(normalized, "unknown")
-
-
-def get_categories(entities: dict[str, int]) -> set[str]:
-    """Get set of categories present in entities."""
-    categories = set()
-    for entity_type in entities:
-        cat = get_category(entity_type)
-        if cat and cat != "unknown":
-            categories.add(cat)
-    return categories
-
-
 def get_co_occurrence_multiplier(entities: dict[str, int]) -> tuple[float, list[str]]:
-    """Get the highest applicable co-occurrence multiplier."""
-    if not entities:
-        return 1.0, []
+    """Get the highest applicable co-occurrence multiplier.
 
-    categories = get_categories(entities)
-    max_mult = 1.0
-    triggered_rules = []
-
-    for required_cats, mult, rule_name in CO_OCCURRENCE_RULES:
-        if required_cats.issubset(categories):
-            if mult > max_mult:
-                max_mult = mult
-                triggered_rules = [rule_name]
-            elif mult == max_mult:
-                triggered_rules.append(rule_name)
-
-    return max_mult, triggered_rules
+    Delegates to the domain-based compliance compositions defined in
+    :mod:`openlabels.core.entity_domains`.
+    """
+    return get_max_score_multiplier(entities)
 
 
 def calculate_content_score(
@@ -393,6 +271,6 @@ def score(
         exposure_multiplier=exp_mult,
         co_occurrence_multiplier=co_mult,
         co_occurrence_rules=co_rules,
-        categories=get_categories(entities),
+        categories={d.value for d in get_all_domains(entities)},
         exposure=exposure.upper(),
     )

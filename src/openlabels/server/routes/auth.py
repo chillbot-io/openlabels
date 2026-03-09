@@ -30,6 +30,7 @@ import hmac
 import logging
 import os
 import secrets
+import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlparse
 
@@ -640,6 +641,7 @@ async def _callback_azure_ad(
         "refresh_token": result.get("refresh_token"),
         "id_token": result.get("id_token"),
         "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat(),
+        "refresh_token_issued_at": datetime.now(timezone.utc).isoformat(),
         "provider": "azure_ad",
         "claims": id_token_claims,
     }
@@ -758,6 +760,7 @@ async def _callback_oidc(
         "refresh_token": token_result.get("refresh_token"),
         "id_token": id_token,
         "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat(),
+        "refresh_token_issued_at": datetime.now(timezone.utc).isoformat(),
         "provider": "oidc",
         "oidc_provider_key": provider_key,
         "claims": {
@@ -831,6 +834,39 @@ async def _fetch_userinfo(discovery: dict, access_token: str) -> dict:
 
 # ---------- Dev Login ----------
 
+# Per-IP auth failure tracking to prevent brute-force attacks.
+# After _MAX_AUTH_FAILURES consecutive failures within the window,
+# the IP is locked out for _AUTH_LOCKOUT_SECONDS.
+_MAX_AUTH_FAILURES = 5
+_AUTH_FAILURE_WINDOW = 300  # 5 minutes
+_AUTH_LOCKOUT_SECONDS = 900  # 15 minutes
+# {ip: [(timestamp, ...), ...]}
+_auth_failures: dict[str, list[float]] = {}
+
+
+def _check_auth_lockout(ip: str) -> None:
+    """Raise 429 if the IP has exceeded the auth failure threshold."""
+    now = time.monotonic()
+    failures = _auth_failures.get(ip, [])
+    # Prune old entries
+    cutoff = now - max(_AUTH_FAILURE_WINDOW, _AUTH_LOCKOUT_SECONDS)
+    failures = [t for t in failures if t > cutoff]
+    _auth_failures[ip] = failures
+
+    # Check if locked out (recent failures within lockout window)
+    recent = [t for t in failures if t > now - _AUTH_LOCKOUT_SECONDS]
+    if len(recent) >= _MAX_AUTH_FAILURES:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many failed login attempts. Try again later.",
+        )
+
+
+def _record_auth_failure(ip: str) -> None:
+    """Record an auth failure for the given IP."""
+    _auth_failures.setdefault(ip, []).append(time.monotonic())
+
+
 @router.post("/dev-login", response_model=DevLoginResponse)
 @limiter.limit(lambda: get_settings().rate_limit.auth_limit)
 async def dev_login(
@@ -848,7 +884,11 @@ async def dev_login(
     if not settings.server.debug:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dev login requires DEBUG=true")
 
+    client_ip = get_client_ip(request)
+    _check_auth_lockout(client_ip)
+
     if body.username != _DEV_USERNAME or body.password != _DEV_PASSWORD:
+        _record_auth_failure(client_ip)
         log_security_event(
             event_type="dev_login_failed",
             details={**_get_request_context(request), "username": body.username},
@@ -1072,6 +1112,21 @@ async def get_token(
             if expires_at < datetime.now(timezone.utc):
                 refresh_token = session_data.get("refresh_token")
                 if refresh_token:
+                    # Enforce refresh token max lifetime to limit exposure
+                    # window of a compromised token.
+                    max_lifetime_hours = get_settings().auth.refresh_token_max_lifetime_hours
+                    if max_lifetime_hours > 0:
+                        rt_issued = session_data.get("refresh_token_issued_at")
+                        if rt_issued:
+                            issued_at = datetime.fromisoformat(rt_issued)
+                            if datetime.now(timezone.utc) - issued_at > timedelta(hours=max_lifetime_hours):
+                                logger.info("Refresh token exceeded max lifetime, forcing re-login")
+                                await session_store.delete(session_id)
+                                raise HTTPException(
+                                    status_code=status.HTTP_401_UNAUTHORIZED,
+                                    detail="Session expired, please login again",
+                                )
+
                     try:
                         session_provider = session_data.get("provider", "azure_ad")
                         oidc_key = session_data.get("oidc_provider_key")
@@ -1085,6 +1140,8 @@ async def get_token(
                             ).isoformat()
                             if "refresh_token" in result:
                                 session_data["refresh_token"] = result["refresh_token"]
+                                # Reset lifetime when provider rotates the token
+                                session_data["refresh_token_issued_at"] = datetime.now(timezone.utc).isoformat()
 
                             # M-9: Rotate session ID on token refresh to
                             # prevent session fixation attacks. Delete old
