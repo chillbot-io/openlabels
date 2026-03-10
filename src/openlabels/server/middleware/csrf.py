@@ -70,7 +70,24 @@ def _session_binding(session_id: str) -> str:
     cannot independently compute the binding and forge a CSRF token.
     """
     settings = get_settings()
-    key = settings.server.secret_key.get_secret_value().encode() or b"openlabels-csrf-fallback"
+    raw_key = settings.server.secret_key.get_secret_value()
+    if not raw_key:
+        # SECURITY: Generate a random per-process key instead of using a static
+        # fallback.  This means CSRF tokens won't survive process restarts in
+        # dev, but prevents all dev deployments sharing the same HMAC key.
+        import secrets as _secrets
+        global _DEV_CSRF_KEY  # noqa: PLW0603
+        try:
+            key = _DEV_CSRF_KEY
+        except NameError:
+            _DEV_CSRF_KEY = _secrets.token_bytes(32)
+            key = _DEV_CSRF_KEY
+            logger.warning(
+                "CSRF: secret_key is empty — using random per-process key. "
+                "Set OPENLABELS_SERVER__SECRET_KEY for stable CSRF tokens."
+            )
+    else:
+        key = raw_key.encode()
     return hmac.new(key, session_id.encode(), hashlib.sha256).hexdigest()[:16]
 
 

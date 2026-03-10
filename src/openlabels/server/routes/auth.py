@@ -231,6 +231,7 @@ def _set_session_cookie(
         httponly=True,
         samesite="lax",
         secure=is_secure,
+        path="/",
     )
 
 
@@ -841,6 +842,7 @@ _MAX_AUTH_FAILURES = 5
 _AUTH_FAILURE_WINDOW = 300  # 5 minutes
 _AUTH_LOCKOUT_SECONDS = 900  # 15 minutes
 # {ip: [(timestamp, ...), ...]}
+_AUTH_FAILURES_MAX_SIZE = 10_000
 _auth_failures: dict[str, list[float]] = {}
 
 
@@ -865,6 +867,13 @@ def _check_auth_lockout(ip: str) -> None:
 def _record_auth_failure(ip: str) -> None:
     """Record an auth failure for the given IP."""
     _auth_failures.setdefault(ip, []).append(time.monotonic())
+    # Evict oldest entries if dict exceeds max size (prevent unbounded growth)
+    if len(_auth_failures) > _AUTH_FAILURES_MAX_SIZE:
+        oldest_ips = sorted(
+            _auth_failures, key=lambda k: _auth_failures[k][-1] if _auth_failures[k] else 0,
+        )
+        for old_ip in oldest_ips[: len(_auth_failures) // 2]:
+            _auth_failures.pop(old_ip, None)
 
 
 @router.post("/dev-login", response_model=DevLoginResponse)
@@ -887,7 +896,7 @@ async def dev_login(
     client_ip = get_client_ip(request)
     _check_auth_lockout(client_ip)
 
-    if body.username != _DEV_USERNAME or body.password != _DEV_PASSWORD:
+    if not hmac.compare_digest(body.username, _DEV_USERNAME) or not hmac.compare_digest(body.password, _DEV_PASSWORD):
         _record_auth_failure(client_ip)
         log_security_event(
             event_type="dev_login_failed",

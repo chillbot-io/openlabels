@@ -80,7 +80,18 @@ def create_limiter() -> Limiter:
     storage_uri = _get_storage_uri()
 
     if storage_uri and _validate_redis(storage_uri):
-        logger.info(f"Rate limiter using Redis storage: {storage_uri}")
+        # SECURITY: Mask credentials in Redis URL before logging
+        from urllib.parse import urlparse as _urlparse, urlunparse as _urlunparse
+        try:
+            _parsed = _urlparse(storage_uri)
+            if _parsed.password:
+                _safe = _parsed._replace(netloc=f"***@{_parsed.hostname}:{_parsed.port or 6379}")
+                _display_uri = _urlunparse(_safe)
+            else:
+                _display_uri = storage_uri
+        except Exception:
+            _display_uri = "redis://***"
+        logger.info(f"Rate limiter using Redis storage: {_display_uri}")
         return Limiter(
             key_func=get_client_ip,
             storage_uri=storage_uri,

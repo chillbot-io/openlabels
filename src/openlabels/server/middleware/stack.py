@@ -210,7 +210,7 @@ async def add_security_headers(request: Request, call_next: _CallNext) -> Respon
 
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["X-XSS-Protection"] = "0"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     # SECURITY: Prevent browser/proxy caching of sensitive API responses (PII exports, etc.)
     response.headers["Cache-Control"] = "no-store"

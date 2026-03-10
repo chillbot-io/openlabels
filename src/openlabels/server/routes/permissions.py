@@ -758,6 +758,8 @@ async def export_exposure_report(
 
     where = " AND ".join(conditions)
 
+    _EXPORT_ROW_LIMIT = 100_000  # Cap to prevent OOM on large tenants
+
     result = await db.execute(
         text(f"""
             SELECT
@@ -782,8 +784,9 @@ async def export_exposure_report(
                 AND fi.folder_path = d.dir_path
             WHERE {where}
             ORDER BY d.dir_path
+            LIMIT :row_limit
         """),
-        params,
+        {**params, "row_limit": _EXPORT_ROW_LIMIT},
     )
     rows = result.all()
 

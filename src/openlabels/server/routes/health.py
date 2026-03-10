@@ -22,7 +22,7 @@ import os
 import platform
 import sys
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -430,7 +430,7 @@ async def get_cache_health(
         logger.warning(f"Failed to get cache stats: {e}")
         return CacheStats(
             enabled=False,
-            backend={"type": "unknown", "error": str(e)},
+            backend={"type": "unknown", "error": "cache unavailable"},
             default_ttl=0,
             key_prefix="",
         )
@@ -699,8 +699,9 @@ class ErrorLogResponse(BaseModel):
 
 @router.get("/errors", response_model=ErrorLogResponse)
 async def get_error_log(
-    source: str | None = Query(None, description="Filter: job, task, system"),
-    severity: str | None = Query(None, description="Filter: error, warning, critical"),
+    request: Request,
+    source: Literal["job", "task", "system"] | None = Query(None, description="Filter: job, task, system"),
+    severity: Literal["error", "warning", "critical"] | None = Query(None, description="Filter: error, warning, critical"),
     hours: int = Query(24, ge=1, le=168, description="Hours to look back"),
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
@@ -875,6 +876,12 @@ async def create_system_alert(
         raise BadRequestError(
             f"Invalid condition. Must be one of: {', '.join(sorted(VALID_ALERT_CONDITIONS))}",
         )
+    invalid_actions = set(body.actions) - VALID_ALERT_ACTIONS
+    if invalid_actions:
+        raise BadRequestError(
+            f"Invalid actions: {', '.join(sorted(invalid_actions))}. "
+            f"Must be one of: {', '.join(sorted(VALID_ALERT_ACTIONS))}",
+        )
 
     from uuid import uuid4
     rule_id = str(uuid4())
@@ -919,6 +926,16 @@ async def update_system_alert(
     if body.component not in VALID_ALERT_COMPONENTS:
         raise BadRequestError(
             f"Invalid component. Must be one of: {', '.join(sorted(VALID_ALERT_COMPONENTS))}",
+        )
+    if body.condition not in VALID_ALERT_CONDITIONS:
+        raise BadRequestError(
+            f"Invalid condition. Must be one of: {', '.join(sorted(VALID_ALERT_CONDITIONS))}",
+        )
+    invalid_actions = set(body.actions) - VALID_ALERT_ACTIONS
+    if invalid_actions:
+        raise BadRequestError(
+            f"Invalid actions: {', '.join(sorted(invalid_actions))}. "
+            f"Must be one of: {', '.join(sorted(VALID_ALERT_ACTIONS))}",
         )
 
     rule = tenant_rules[alert_id]
