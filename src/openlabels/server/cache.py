@@ -610,14 +610,14 @@ def _make_cache_key(
     for arg in args:
         if hasattr(arg, "__dict__"):
             # For objects, use a hash of their representation
-            key_parts.append(hashlib.md5(str(arg).encode()).hexdigest()[:8])
+            key_parts.append(hashlib.sha256(str(arg).encode()).hexdigest()[:8])
         else:
             key_parts.append(str(arg))
 
     # Add sorted keyword args
     for k, v in sorted(kwargs.items()):
         if hasattr(v, "__dict__"):
-            key_parts.append(f"{k}={hashlib.md5(str(v).encode()).hexdigest()[:8]}")
+            key_parts.append(f"{k}={hashlib.sha256(str(v).encode()).hexdigest()[:8]}")
         else:
             key_parts.append(f"{k}={v}")
 

@@ -7,6 +7,7 @@ stays a thin application factory.
 from __future__ import annotations
 
 import logging
+import secrets
 import time
 import uuid
 from collections.abc import Callable, Coroutine
@@ -214,15 +215,14 @@ async def add_security_headers(request: Request, call_next: _CallNext) -> Respon
     # SECURITY: Prevent browser/proxy caching of sensitive API responses (PII exports, etc.)
     response.headers["Cache-Control"] = "no-store"
 
-    # TODO(M-47): 'unsafe-inline' for style-src weakens XSS protection.
-    # It is currently required because HTMX and Tailwind inject inline
-    # styles at runtime.  Replace with nonce-based or hash-based CSP for
-    # styles once inline style usage is eliminated or a nonce injection
-    # middleware is added.
+    # M-47: Use per-request nonce for style-src instead of 'unsafe-inline'.
+    # Server-rendered <style> tags must include nonce="{{ request.state.csp_nonce }}".
+    csp_nonce = getattr(request.state, "csp_nonce", None) or secrets.token_urlsafe(16)
+    request.state.csp_nonce = csp_nonce
     csp_directives = [
         "default-src 'self'",
         "script-src 'self'",
-        "style-src 'self' 'unsafe-inline'",
+        f"style-src 'self' 'nonce-{csp_nonce}'",
         "img-src 'self' data: https:",
         "font-src 'self'",
         "connect-src 'self' wss:",

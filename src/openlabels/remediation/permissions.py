@@ -584,11 +584,22 @@ def _restore_permissions_unix(path: Path, acl_data: str) -> RemediationResult:
                 "Consider re-running lockdown to store JSON-format backups.",
                 path,
             )
-            if len(acl_data) > 100_000 or not acl_data.strip().startswith("{"):
+            # SECURITY: Reject data that is too large, doesn't look like a
+            # dict literal, or has excessive nesting depth (which can cause
+            # stack overflow / memory exhaustion in ast.literal_eval).
+            _MAX_LITERAL_SIZE = 100_000
+            _MAX_NESTING_DEPTH = 20
+            stripped = acl_data.strip()
+            nesting = max(stripped.count("{"), stripped.count("["))
+            if (
+                len(acl_data) > _MAX_LITERAL_SIZE
+                or not stripped.startswith("{")
+                or nesting > _MAX_NESTING_DEPTH
+            ):
                 logger.warning(
                     "ACL backup data rejected for ast.literal_eval: "
-                    "size=%d, starts_with_brace=%s",
-                    len(acl_data), acl_data.strip()[:1] == "{",
+                    "size=%d, starts_with_brace=%s, nesting=%d",
+                    len(acl_data), stripped[:1] == "{", nesting,
                 )
                 acl_dict = {"acl": acl_data}
             else:
