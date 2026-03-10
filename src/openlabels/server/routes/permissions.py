@@ -182,33 +182,32 @@ async def get_exposure_summary(
     Counts directories by their exposure level based on security
     descriptor flags.
     """
-    conditions = ["d.tenant_id = :tenant_id"]
     params: dict = {"tenant_id": str(tenant.tenant_id)}
 
+    target_clause = ""
     if target_id:
-        conditions.append("d.target_id = :target_id")
+        target_clause = " AND d.target_id = :target_id"
         params["target_id"] = str(target_id)
 
-    where = " AND ".join(conditions)
-
     result = await db.execute(
-        text(f"""
-            SELECT
-                count(*)                                                AS total_directories,
-                count(sd.sd_hash)                                       AS with_sd,
-                count(*) FILTER (WHERE sd.world_accessible = true)      AS world_accessible,
-                count(*) FILTER (WHERE sd.authenticated_users = true)   AS authenticated_users,
-                count(*) FILTER (WHERE sd.custom_acl = true)            AS custom_acl,
-                count(*) FILTER (
-                    WHERE sd.sd_hash IS NOT NULL
-                      AND sd.world_accessible = false
-                      AND sd.authenticated_users = false
-                      AND sd.custom_acl = false
-                )                                                       AS private_dirs
-            FROM directory_tree d
-            LEFT JOIN security_descriptors sd ON d.sd_hash = sd.sd_hash
-            WHERE {where}
-        """),
+        text(
+            "SELECT"
+            "  count(*) AS total_directories,"
+            "  count(sd.sd_hash) AS with_sd,"
+            "  count(*) FILTER (WHERE sd.world_accessible = true) AS world_accessible,"
+            "  count(*) FILTER (WHERE sd.authenticated_users = true) AS authenticated_users,"
+            "  count(*) FILTER (WHERE sd.custom_acl = true) AS custom_acl,"
+            "  count(*) FILTER ("
+            "    WHERE sd.sd_hash IS NOT NULL"
+            "      AND sd.world_accessible = false"
+            "      AND sd.authenticated_users = false"
+            "      AND sd.custom_acl = false"
+            "  ) AS private_dirs"
+            " FROM directory_tree d"
+            " LEFT JOIN security_descriptors sd ON d.sd_hash = sd.sd_hash"
+            " WHERE d.tenant_id = :tenant_id"
+            + target_clause
+        ),
         params,
     )
     row = result.one()
@@ -397,31 +396,31 @@ async def lookup_principal_access(
     for entries matching the principal. Returns directories with the
     specific permissions granted.
     """
-    # Build conditions
-    conditions = [
-        "d.tenant_id = :tenant_id",
-        "sd.permissions_json IS NOT NULL",
-        "sd.permissions_json ? :principal",  # JSONB ? operator: key exists
-    ]
     params: dict = {
         "tenant_id": str(tenant.tenant_id),
         "principal": principal,
     }
 
+    target_clause = ""
     if target_id:
-        conditions.append("d.target_id = :target_id")
+        target_clause = " AND d.target_id = :target_id"
         params["target_id"] = str(target_id)
 
-    where = " AND ".join(conditions)
+    _BASE_WHERE = (
+        " WHERE d.tenant_id = :tenant_id"
+        " AND sd.permissions_json IS NOT NULL"
+        " AND sd.permissions_json ? :principal"  # JSONB ? operator: key exists
+    )
 
     # Count query
     count_result = await db.execute(
-        text(f"""
-            SELECT count(*) AS cnt
-            FROM directory_tree d
-            JOIN security_descriptors sd ON d.sd_hash = sd.sd_hash
-            WHERE {where}
-        """),
+        text(
+            "SELECT count(*) AS cnt"
+            " FROM directory_tree d"
+            " JOIN security_descriptors sd ON d.sd_hash = sd.sd_hash"
+            + _BASE_WHERE
+            + target_clause
+        ),
         params,
     )
     total = count_result.scalar() or 0
@@ -430,19 +429,20 @@ async def lookup_principal_access(
     params["limit"] = pagination.limit
     params["offset"] = pagination.offset
     result = await db.execute(
-        text(f"""
-            SELECT
-                d.id AS dir_id,
-                d.dir_path,
-                d.dir_name,
-                d.target_id,
-                sd.permissions_json -> :principal AS principal_perms
-            FROM directory_tree d
-            JOIN security_descriptors sd ON d.sd_hash = sd.sd_hash
-            WHERE {where}
-            ORDER BY d.dir_path
-            LIMIT :limit OFFSET :offset
-        """),
+        text(
+            "SELECT"
+            "  d.id AS dir_id,"
+            "  d.dir_path,"
+            "  d.dir_name,"
+            "  d.target_id,"
+            "  sd.permissions_json -> :principal AS principal_perms"
+            " FROM directory_tree d"
+            " JOIN security_descriptors sd ON d.sd_hash = sd.sd_hash"
+            + _BASE_WHERE
+            + target_clause
+            + " ORDER BY d.dir_path"
+            " LIMIT :limit OFFSET :offset"
+        ),
         params,
     )
     rows = result.all()
@@ -732,60 +732,54 @@ async def export_exposure_report(
     flags, owner, and folder-level sensitivity indicators. Suitable for
     compliance reporting and offline analysis.
     """
-    conditions = ["d.tenant_id = :tenant_id"]
     params: dict = {"tenant_id": str(tenant.tenant_id)}
+    extra_clauses = ""
 
     if target_id:
-        conditions.append("d.target_id = :target_id")
+        extra_clauses += " AND d.target_id = :target_id"
         params["target_id"] = str(target_id)
 
     if exposure == "PUBLIC":
-        conditions.append("sd.world_accessible = true")
+        extra_clauses += " AND sd.world_accessible = true"
     elif exposure == "ORG_WIDE":
-        conditions.append("sd.authenticated_users = true")
-        conditions.append("sd.world_accessible = false")
+        extra_clauses += " AND sd.authenticated_users = true AND sd.world_accessible = false"
     elif exposure == "INTERNAL":
-        conditions.append("sd.custom_acl = true")
-        conditions.append("sd.world_accessible = false")
-        conditions.append("sd.authenticated_users = false")
+        extra_clauses += (
+            " AND sd.custom_acl = true"
+            " AND sd.world_accessible = false"
+            " AND sd.authenticated_users = false"
+        )
     elif exposure == "PRIVATE":
-        conditions.append("sd.sd_hash IS NOT NULL")
-        conditions.append("sd.world_accessible = false")
-        conditions.append("sd.authenticated_users = false")
-        conditions.append("sd.custom_acl = false")
+        extra_clauses += (
+            " AND sd.sd_hash IS NOT NULL"
+            " AND sd.world_accessible = false"
+            " AND sd.authenticated_users = false"
+            " AND sd.custom_acl = false"
+        )
     elif exposure == "UNKNOWN":
-        conditions.append("d.sd_hash IS NULL")
-
-    where = " AND ".join(conditions)
+        extra_clauses += " AND d.sd_hash IS NULL"
 
     _EXPORT_ROW_LIMIT = 100_000  # Cap to prevent OOM on large tenants
 
     result = await db.execute(
-        text(f"""
-            SELECT
-                d.dir_path,
-                d.dir_name,
-                d.target_id,
-                d.child_dir_count,
-                d.child_file_count,
-                sd.owner_sid,
-                sd.group_sid,
-                sd.world_accessible,
-                sd.authenticated_users,
-                sd.custom_acl,
-                fi.has_sensitive_files,
-                fi.highest_risk_tier,
-                fi.total_entities_found
-            FROM directory_tree d
-            LEFT JOIN security_descriptors sd ON d.sd_hash = sd.sd_hash
-            LEFT JOIN folder_inventory fi
-                ON fi.tenant_id = d.tenant_id
-                AND fi.target_id = d.target_id
-                AND fi.folder_path = d.dir_path
-            WHERE {where}
-            ORDER BY d.dir_path
-            LIMIT :row_limit
-        """),
+        text(
+            "SELECT"
+            "  d.dir_path, d.dir_name, d.target_id,"
+            "  d.child_dir_count, d.child_file_count,"
+            "  sd.owner_sid, sd.group_sid,"
+            "  sd.world_accessible, sd.authenticated_users, sd.custom_acl,"
+            "  fi.has_sensitive_files, fi.highest_risk_tier, fi.total_entities_found"
+            " FROM directory_tree d"
+            " LEFT JOIN security_descriptors sd ON d.sd_hash = sd.sd_hash"
+            " LEFT JOIN folder_inventory fi"
+            "   ON fi.tenant_id = d.tenant_id"
+            "   AND fi.target_id = d.target_id"
+            "   AND fi.folder_path = d.dir_path"
+            " WHERE d.tenant_id = :tenant_id"
+            + extra_clauses
+            + " ORDER BY d.dir_path"
+            " LIMIT :row_limit"
+        ),
         {**params, "row_limit": _EXPORT_ROW_LIMIT},
     )
     rows = result.all()
