@@ -395,9 +395,11 @@ async def _update_dirtree_hashes(session: AsyncSession, rows: list[dict]) -> Non
     if not rows:
         return
 
-    values_sql = ", ".join(
-        f"(CAST(:id_{i} AS uuid), CAST(:hash_{i} AS bytea))"
-        for i in range(len(rows))
+    from openlabels.jobs.delta_sync import _build_values_clause
+
+    values_sql = _build_values_clause(
+        [("id", "uuid"), ("hash", "bytea")],
+        len(rows),
     )
     params = {}
     for i, row in enumerate(rows):
@@ -405,13 +407,13 @@ async def _update_dirtree_hashes(session: AsyncSession, rows: list[dict]) -> Non
         params[f"hash_{i}"] = row["sd_hash"]
 
     await session.execute(
-        text(f"""
-            UPDATE directory_tree AS dt
-               SET sd_hash = v.sd_hash,
-                   updated_at = now()
-              FROM (VALUES {values_sql}) AS v(id, sd_hash)
-             WHERE dt.id = v.id
-        """),
+        text(
+            "UPDATE directory_tree AS dt"
+            " SET sd_hash = v.sd_hash,"
+            "     updated_at = now()"
+            " FROM (VALUES " + values_sql + ") AS v(id, sd_hash)"
+            " WHERE dt.id = v.id"
+        ),
         params,
     )
 

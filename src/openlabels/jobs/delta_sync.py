@@ -286,15 +286,42 @@ async def _upsert_batch(session: AsyncSession, rows: list[dict]) -> None:
     await session.execute(stmt)
 
 
+def _build_values_clause(
+    columns: list[tuple[str, str]], count: int,
+) -> str:
+    """Build a SQL VALUES clause with typed bind-parameter placeholders.
+
+    Each *column* is a (prefix, cast_type) pair.  For *count* rows the
+    function emits ``(CAST(:prefix_0 AS type), ...), (CAST(:prefix_1 AS type), ...)``.
+
+    Only integer indices are used, so the output is always safe from
+    injection regardless of caller input.
+    """
+    row_tpl = ", ".join(
+        "CAST(:" + prefix + "_{i} AS " + cast_type + ")"
+        for prefix, cast_type in columns
+    )
+    return ", ".join(
+        "(" + row_tpl.replace("{i}", str(i)) + ")"
+        for i in range(count)
+    )
+
+
 async def _apply_updates(session: AsyncSession, rows: list[dict]) -> None:
     """Batch-update modified directories via a VALUES join."""
     if not rows:
         return
 
-    values_sql = ", ".join(
-        f"(CAST(:id_{i} AS uuid), CAST(:mod_{i} AS timestamptz), CAST(:ref_{i} AS bigint), "
-        f"CAST(:pref_{i} AS bigint), CAST(:dcount_{i} AS int), CAST(:fcount_{i} AS int))"
-        for i in range(len(rows))
+    values_sql = _build_values_clause(
+        [
+            ("id", "uuid"),
+            ("mod", "timestamptz"),
+            ("ref", "bigint"),
+            ("pref", "bigint"),
+            ("dcount", "int"),
+            ("fcount", "int"),
+        ],
+        len(rows),
     )
     params: dict = {}
     for i, row in enumerate(rows):
@@ -306,20 +333,20 @@ async def _apply_updates(session: AsyncSession, rows: list[dict]) -> None:
         params[f"fcount_{i}"] = row["child_file_count"]
 
     await session.execute(
-        text(f"""
-            UPDATE directory_tree AS dt
-               SET dir_modified = v.dir_modified,
-                   dir_ref = v.dir_ref,
-                   parent_ref = v.parent_ref,
-                   child_dir_count = v.child_dir_count,
-                   child_file_count = v.child_file_count,
-                   sd_hash = NULL,
-                   updated_at = now()
-              FROM (VALUES {values_sql})
-                   AS v(id, dir_modified, dir_ref, parent_ref,
-                        child_dir_count, child_file_count)
-             WHERE dt.id = v.id
-        """),
+        text(
+            "UPDATE directory_tree AS dt"
+            " SET dir_modified = v.dir_modified,"
+            "     dir_ref = v.dir_ref,"
+            "     parent_ref = v.parent_ref,"
+            "     child_dir_count = v.child_dir_count,"
+            "     child_file_count = v.child_file_count,"
+            "     sd_hash = NULL,"
+            "     updated_at = now()"
+            " FROM (VALUES " + values_sql + ")"
+            "   AS v(id, dir_modified, dir_ref, parent_ref,"
+            "        child_dir_count, child_file_count)"
+            " WHERE dt.id = v.id"
+        ),
         params,
     )
 
@@ -336,7 +363,7 @@ async def _delete_missing(
 
     for i in range(0, len(path_list), UPSERT_BATCH_SIZE):
         batch = path_list[i:i + UPSERT_BATCH_SIZE]
-        placeholders = ", ".join(f":p_{j}" for j in range(len(batch)))
+        placeholders = ", ".join(":p_" + str(j) for j in range(len(batch)))
         params: dict = {
             "tenant_id": tenant_id,
             "target_id": target_id,
@@ -345,12 +372,12 @@ async def _delete_missing(
             params[f"p_{j}"] = p
 
         result = await session.execute(
-            text(f"""
-                DELETE FROM directory_tree
-                 WHERE tenant_id = :tenant_id
-                   AND target_id = :target_id
-                   AND dir_path IN ({placeholders})
-            """),
+            text(
+                "DELETE FROM directory_tree"
+                " WHERE tenant_id = :tenant_id"
+                "   AND target_id = :target_id"
+                "   AND dir_path IN (" + placeholders + ")"
+            ),
             params,
         )
         total_deleted += result.rowcount

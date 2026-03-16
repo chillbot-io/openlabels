@@ -167,6 +167,9 @@ class DevelopmentFormatter(logging.Formatter):
     }
     RESET = "\033[0m"
 
+    # Reuse the same sensitive field set as JSONFormatter
+    _SENSITIVE_FIELDS = JSONFormatter._SENSITIVE_FIELDS
+
     def __init__(self, use_colors: bool = True) -> None:
         super().__init__()
         self.use_colors = use_colors
@@ -190,7 +193,10 @@ class DevelopmentFormatter(logging.Formatter):
         extras = []
         for key, value in record.__dict__.items():
             if key not in skip_attrs and not key.startswith("_"):
-                extras.append(f"{key}={value}")
+                if key.lower() in self._SENSITIVE_FIELDS:
+                    extras.append(f"{key}=[REDACTED]")
+                else:
+                    extras.append(f"{key}={value}")
 
         extra_str = " ".join(extras)
         if extra_str:

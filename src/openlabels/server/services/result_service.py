@@ -555,25 +555,27 @@ class ResultService(BaseService):
         # instead of loading thousands of JSONB blobs into Python.
         from sqlalchemy import text as sa_text
 
-        job_filter = "AND r.job_id = :job_id" if job_id else ""
-        agg_sql = sa_text(f"""
-            SELECT kv.key AS entity_type,
-                   SUM(kv.value::int) AS total_count
-            FROM (
-                SELECT entity_counts
-                FROM scan_results r
-                WHERE r.tenant_id = :tid
-                  AND r.entity_counts IS NOT NULL
-                  AND r.total_entities > 0
-                  {job_filter}
-                ORDER BY r.scanned_at DESC
-                LIMIT :sample_size
-            ) sub,
-            LATERAL jsonb_each_text(sub.entity_counts) AS kv(key, value)
-            GROUP BY kv.key
-            ORDER BY total_count DESC
-            LIMIT :lim
-        """)
+        _BASE = (
+            "SELECT kv.key AS entity_type,"
+            "       SUM(kv.value::int) AS total_count"
+            " FROM ("
+            "   SELECT entity_counts"
+            "   FROM scan_results r"
+            "   WHERE r.tenant_id = :tid"
+            "     AND r.entity_counts IS NOT NULL"
+            "     AND r.total_entities > 0"
+        )
+        _TAIL = (
+            "   ORDER BY r.scanned_at DESC"
+            "   LIMIT :sample_size"
+            " ) sub,"
+            " LATERAL jsonb_each_text(sub.entity_counts) AS kv(key, value)"
+            " GROUP BY kv.key"
+            " ORDER BY total_count DESC"
+            " LIMIT :lim"
+        )
+        job_clause = " AND r.job_id = :job_id" if job_id else ""
+        agg_sql = sa_text(_BASE + job_clause + _TAIL)
 
         params: dict = {"tid": self.tenant_id, "sample_size": sample_size, "lim": limit}
         if job_id:
